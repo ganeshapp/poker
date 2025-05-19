@@ -1,0 +1,473 @@
+:root {
+    --primary-color: #2c3e50;
+    --secondary-color: #34495e;
+    --accent-color: #3498db;
+    --text-color: #ecf0f1;
+    --success-color: #2ecc71;
+    --error-color: #e74c3c;
+    --table-color: #27ae60;
+    --card-color: #fff;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--primary-color);
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+.app-container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Landing Screen */
+#landing-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    transition: opacity 0.3s ease;
+}
+
+#landing-screen.hidden {
+    display: none;
+}
+
+.primary-button {
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    background-color: var(--accent-color);
+    color: var(--text-color);
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.primary-button:hover {
+    transform: translateY(-2px);
+    background-color: #2980b9;
+}
+
+/* Game Interface */
+#game-interface {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    min-height: 100vh;
+}
+
+#game-interface.hidden {
+    display: none;
+}
+
+/* Sidebar */
+#sidebar {
+    background-color: var(--secondary-color);
+    padding: 1rem;
+    width: 250px;
+    transition: transform 0.3s ease;
+}
+
+.menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-color);
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.menu-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.mode-button {
+    padding: 0.8rem;
+    background: none;
+    border: none;
+    color: var(--text-color);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.mode-button:hover,
+.mode-button.active {
+    background-color: var(--accent-color);
+}
+
+/* Main Content */
+#main-content {
+    padding: 2rem;
+    display: grid;
+    grid-template-rows: 1fr auto auto;
+    gap: 2rem;
+}
+
+/* Poker Table */
+#poker-table {
+    background-color: var(--table-color);
+    border-radius: 200px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 400px;
+    position: relative;
+}
+
+.community-cards,
+.player-hand,
+.ai-hand {
+    display: flex;
+    gap: 1rem;
+}
+
+/* Action Controls */
+#action-controls {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    padding: 1rem;
+}
+
+#action-controls button {
+    padding: 0.8rem 1.5rem;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+#fold-btn {
+    background-color: var(--error-color);
+    color: var(--text-color);
+}
+
+#call-btn {
+    background-color: var(--accent-color);
+    color: var(--text-color);
+}
+
+#raise-btn {
+    background-color: var(--success-color);
+    color: var(--text-color);
+}
+
+.raise-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* GTO Panel */
+#gto-panel {
+    background-color: var(--secondary-color);
+    padding: 1rem;
+    border-radius: 5px;
+}
+
+/* Stats Panel */
+#stats-panel {
+    background-color: var(--secondary-color);
+    padding: 1rem;
+    border-radius: 5px;
+}
+
+#stats-panel.hidden {
+    display: none;
+}
+
+/* Card Styles */
+.card {
+    width: 60px;
+    height: 90px;
+    background-color: var(--card-color);
+    border-radius: 5px;
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    margin: 0 5px;
+}
+
+.card-value {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.card-suit {
+    font-size: 1.5rem;
+    text-align: center;
+}
+
+/* Position Indicator */
+.position-indicator {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--accent-color);
+    color: var(--text-color);
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.9rem;
+}
+
+/* Stats Display */
+.stat-item {
+    background-color: var(--primary-color);
+    padding: 1rem;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+}
+
+.stat-item h4 {
+    margin-bottom: 0.5rem;
+    color: var(--accent-color);
+}
+
+.position-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--secondary-color);
+}
+
+/* Decision Results */
+.decision-result {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 1rem 2rem;
+    border-radius: 5px;
+    font-size: 1.5rem;
+    font-weight: bold;
+    animation: fadeInOut 2s ease-in-out;
+}
+
+.decision-result.correct {
+    background-color: var(--success-color);
+    color: var(--text-color);
+}
+
+.decision-result.incorrect {
+    background-color: var(--error-color);
+    color: var(--text-color);
+}
+
+@keyframes fadeInOut {
+    0% { opacity: 0; }
+    20% { opacity: 1; }
+    80% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* Raise Controls */
+.raise-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background-color: var(--secondary-color);
+    padding: 1rem;
+    border-radius: 5px;
+}
+
+#raise-slider {
+    flex: 1;
+    height: 5px;
+    -webkit-appearance: none;
+    background: var(--accent-color);
+    border-radius: 5px;
+    outline: none;
+}
+
+#raise-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    background: var(--text-color);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    #game-interface {
+        grid-template-columns: 1fr;
+    }
+
+    #sidebar {
+        position: fixed;
+        left: -250px;
+        top: 0;
+        bottom: 0;
+        z-index: 1000;
+    }
+
+    #sidebar.active {
+        transform: translateX(250px);
+    }
+
+    .menu-toggle {
+        display: block;
+        position: fixed;
+        top: 1rem;
+        left: 1rem;
+        z-index: 1001;
+    }
+
+    #poker-table {
+        border-radius: 100px;
+        min-height: 300px;
+    }
+
+    #action-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .raise-controls {
+        flex-direction: column;
+    }
+
+    .card {
+        width: 45px;
+        height: 68px;
+    }
+
+    .card-value {
+        font-size: 1rem;
+    }
+
+    .card-suit {
+        font-size: 1.2rem;
+    }
+
+    .stat-item {
+        padding: 0.8rem;
+    }
+}
+
+/* Mode Panels */
+.mode-panel {
+    background: var(--secondary-color);
+    padding: 2rem;
+    border-radius: 10px;
+    margin-bottom: 2rem;
+}
+.mode-panel.hidden {
+    display: none;
+}
+
+/* Decision Drills */
+#drill-hand {
+    margin-bottom: 1rem;
+}
+#drill-actions {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.drill-btn {
+    padding: 0.7rem 1.5rem;
+    border: none;
+    border-radius: 5px;
+    background: var(--accent-color);
+    color: var(--text-color);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.drill-btn:hover {
+    background: #2980b9;
+}
+.drill-result.correct {
+    color: var(--success-color);
+    font-weight: bold;
+}
+.drill-result.incorrect {
+    color: var(--error-color);
+    font-weight: bold;
+}
+
+/* Range Trainer */
+.range-table {
+    border-collapse: collapse;
+    margin: 1rem 0;
+}
+.range-table td {
+    width: 32px;
+    height: 32px;
+    text-align: center;
+    border: 1px solid var(--primary-color);
+    cursor: pointer;
+    font-size: 0.85rem;
+    background: var(--card-color);
+    color: var(--primary-color);
+    transition: background 0.2s, color 0.2s;
+}
+.range-table td.selected {
+    background: var(--accent-color);
+    color: var(--text-color);
+}
+#range-result {
+    margin-top: 1rem;
+    font-size: 1.1rem;
+}
+
+/* Hand History Table */
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    background: var(--primary-color);
+    color: var(--text-color);
+}
+.history-table th, .history-table td {
+    border: 1px solid var(--secondary-color);
+    padding: 0.5rem 0.7rem;
+    text-align: center;
+}
+.history-table th {
+    background: var(--secondary-color);
+    color: var(--accent-color);
+}
+
+.drill-hand-cards {
+    display: flex;
+    flex-direction: row;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.secondary-button {
+    padding: 0.6rem 1.2rem;
+    font-size: 1rem;
+    background-color: transparent;
+    color: var(--accent-color);
+    border: 2px solid var(--accent-color);
+    border-radius: 5px;
+    cursor: pointer;
+    margin-bottom: 1rem;
+    transition: background 0.2s, color 0.2s;
+}
+.secondary-button:hover {
+    background-color: var(--accent-color);
+    color: var(--text-color);
+} 
