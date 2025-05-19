@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poker Training App</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Landing Screen -->
+        <section id="landing-screen" class="active">
+            <h1>Poker Training</h1>
+            <button id="start-training" class="primary-button">Start Training</button>
+        </section>
+
+        <!-- Main Game Interface -->
+        <section id="game-interface" class="hidden">
+            <!-- Sidebar Menu -->
+            <nav id="sidebar">
+                <button class="menu-toggle">☰</button>
+                <div class="menu-content">
+                    <button class="mode-button active" data-mode="play">Play Mode</button>
+                    <button class="mode-button" data-mode="drills">Decision Drills</button>
+                    <button class="mode-button" data-mode="range">Range Trainer</button>
+                    <button class="mode-button" data-mode="stats">Stats</button>
+                    <button class="mode-button" data-mode="history">Hand History</button>
+                </div>
+            </nav>
+
+            <!-- Main Content Area -->
+            <main id="main-content">
+                <!-- Poker Table -->
+                <div id="poker-table">
+                    <div class="community-cards"></div>
+                    <div class="player-hand"></div>
+                    <div class="ai-hand"></div>
+                </div>
+
+                <!-- Action Controls -->
+                <div id="action-controls">
+                    <button id="fold-btn">Fold</button>
+                    <button id="call-btn">Call</button>
+                    <div class="raise-controls">
+                        <input type="range" id="raise-slider" min="0" max="100">
+                        <button id="raise-btn">Raise</button>
+                    </div>
+                </div>
+
+                <!-- GTO Panel -->
+                <div id="gto-panel">
+                    <h3>GTO Recommendation</h3>
+                    <div id="gto-recommendation"></div>
+                    <div id="gto-explanation"></div>
+                </div>
+
+                <!-- Stats Panel -->
+                <div id="stats-panel" class="hidden">
+                    <h3>Session Stats</h3>
+                    <button id="reset-stats-btn" class="secondary-button">Reset Stats & History</button>
+                    <div id="stats-content"></div>
+                </div>
+            </main>
+        </section>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html> 
