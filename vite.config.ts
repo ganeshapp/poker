@@ -4,6 +4,9 @@ import path from "node:path";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // Relative base so the same build works both under the GitHub Pages
+  // subpath (e.g. /poker/) and inside the Tauri desktop app's custom protocol.
+  base: "./",
   plugins: [react()],
   resolve: {
     alias: {
