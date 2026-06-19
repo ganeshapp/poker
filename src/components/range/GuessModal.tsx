@@ -73,7 +73,7 @@ export function GuessModal() {
               <Button variant="ghost" onClick={() => setPainted(new Set())} disabled={painted.size === 0}>
                 Clear
               </Button>
-              <Button onClick={() => peek(painted)}>
+              <Button onClick={() => peek([...painted])}>
                 <Icon name="eye" size={16} /> {painted.size > 0 ? "Peek & score" : "Peek"}
               </Button>
             </div>
