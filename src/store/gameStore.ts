@@ -508,7 +508,8 @@ export const useGame = create<GameStore>((set, get) => {
           if (review.verdict === "mistake") {
             const la2 = legalActions(t);
             const bb = t.bigBlind;
-            const best: DrillAction = a.type === "call" ? "fold" : a.type === "fold" ? "call" : a.type;
+            const best: DrillAction =
+              a.type === "call" ? "fold" : a.type === "fold" ? "call" : a.type === "raise" ? "raise" : a.type === "bet" ? "bet" : "fold";
             const options: DrillOption[] =
               la2.toCall > 0
                 ? [
