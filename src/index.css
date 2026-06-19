@@ -1,0 +1,58 @@
+@import "./styles/tokens.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--ink-900);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+  }
+
+  #root {
+    display: flex;
+    flex-direction: column;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+}
+
+@layer components {
+  /* App-wide gradient backdrop for the main shell */
+  .app-backdrop {
+    background:
+      radial-gradient(1200px 600px at 70% -10%, rgba(21, 147, 95, 0.12), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(232, 194, 90, 0.06), transparent 55%),
+      var(--ink-900);
+  }
+
+  /* Felt table surface */
+  .felt-surface {
+    background:
+      radial-gradient(120% 120% at 50% 35%, var(--felt-light) 0%, var(--felt) 38%, var(--felt-dark) 100%);
+  }
+
+  .glass {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+  }
+}

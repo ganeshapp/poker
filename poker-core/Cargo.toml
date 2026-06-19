@@ -1,0 +1,13 @@
+[package]
+name = "poker-core"
+version = "0.1.0"
+edition = "2021"
+description = "Hand evaluator and Monte Carlo equity engine for All-In."
+
+[dependencies]
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+
+[lib]
+name = "poker_core"
+path = "src/lib.rs"

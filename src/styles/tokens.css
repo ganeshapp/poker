@@ -1,0 +1,142 @@
+/* ============================================================
+   All-In — Design tokens (CSS variables) + keyframes
+   Imported first; Tailwind layers are applied on top.
+   ============================================================ */
+
+:root {
+  /* Surfaces / ink */
+  --ink-900: #0b0f14;
+  --ink-850: #0e131a;
+  --ink-800: #11161d;
+  --ink-700: #161d26;
+  --ink-600: #1f2833;
+  --ink-500: #2a3542;
+  --ink-400: #3a4757;
+  --ink-300: #55657a;
+
+  /* Text */
+  --text: #e9eef4;
+  --text-muted: #9aa7b4;
+  --text-faint: #6b7888;
+
+  /* Brand / accent */
+  --gold: #e8c25a;
+  --gold-dark: #c79a36;
+  --gold-light: #f4dd92;
+
+  /* Felt */
+  --felt: #0e6b46;
+  --felt-dark: #093d2a;
+  --felt-light: #15935f;
+  --rail: #2a1a10;
+  --rail-light: #43291a;
+
+  /* Chips */
+  --chip-red: #d23b3b;
+  --chip-blue: #2f6fd0;
+  --chip-green: #2faa66;
+  --chip-black: #20242b;
+  --chip-purple: #8a5cd1;
+  --chip-gold: #e8c25a;
+
+  /* Suits */
+  --suit-red: #d83a3a;
+  --suit-black: #1b2230;
+
+  /* Semantic */
+  --good: #3fbf7f;
+  --bad: #ec5a5a;
+  --warn: #e8b54a;
+  --info: #4f9be8;
+
+  /* Range matrix */
+  --combo-pair: #b8442f;
+  --combo-suited: #2f8f5c;
+  --combo-offsuit: #2c3a4a;
+
+  /* Borders */
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  /* Radii */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+
+  /* Shadows */
+  --sh-card: 0 2px 6px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --sh-pop: 0 18px 50px -12px rgba(0, 0, 0, 0.7), 0 4px 12px rgba(0, 0, 0, 0.4);
+  --glow-gold: 0 0 0 1px rgba(232, 194, 90, 0.45), 0 0 26px -4px rgba(232, 194, 90, 0.5);
+
+  /* Fonts */
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Timing */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Helpers */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ink-500);
+  border-radius: 999px;
+  border: 2px solid var(--ink-900);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-400);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Keyframes */
+@keyframes dealIn {
+  from { transform: translateY(-34px) rotate(-6deg) scale(0.85); opacity: 0; }
+  to { transform: translateY(0) rotate(0) scale(1); opacity: 1; }
+}
+@keyframes fadeUp {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes pop {
+  0% { transform: scale(0.85); opacity: 0; }
+  60% { transform: scale(1.04); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
