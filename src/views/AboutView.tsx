@@ -15,7 +15,7 @@ const MODES: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "target",
     title: "Drills",
-    body: "Chess-puzzle-style practice. A spot is dealt; replay it to the decision point with the navigator, then choose fold/call/raise. You get instant feedback and a self-adjusting rating. Pre-flop uses GTO-derived charts; post-flop uses pot-odds/equity heuristics.",
+    body: "Chess-puzzle-style practice. Replay a spot to the decision point, then choose fold/call/raise for instant feedback and a self-adjusting rating. Three modes: Mixed cash spots (pre-flop charts + post-flop pot-odds/equity), short-stack Push/Fold, and My Leaks — your own coach-flagged mistakes, re-served until you fix them.",
   },
   {
     icon: "book",
@@ -25,7 +25,7 @@ const MODES: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "stats",
     title: "Stats",
-    body: "Track your win-rate (bb/100), range-read accuracy and results vs each archetype, see a coaching review of your leaks and recent −EV decisions, and export a session's hands as a PokerStars-style history.",
+    body: "Track your win-rate (bb/100), range-read accuracy and results vs each archetype, see a coaching review of your leaks, replay any hand step-by-step from the session summary, and export a session's hands as a PokerStars-style history.",
   },
 ];
 
@@ -114,6 +114,28 @@ export function AboutView() {
               yourself on decisions (the coach) more than short-term results.
             </li>
           </ul>
+        </Card>
+
+        {/* Roadmap */}
+        <h2 className="mb-3 mt-8 font-display text-xl font-bold text-[var(--text)]">On the roadmap</h2>
+        <Card>
+          <p className="mb-2 text-[0.84rem] text-muted">
+            Coming next (see the project README for the full, prioritised list):
+          </p>
+          <ul className="space-y-1.5 text-[0.84rem] text-muted">
+            {[
+              "Desktop auto-update — one-click new versions",
+              "Configurable table — 6/9-max, antes",
+              "Daily goals, streaks & achievements",
+              "Install as an app (PWA) on the web",
+            ].map((x) => (
+              <li key={x} className="flex gap-2">
+                <Icon name="arrow-right" size={14} className="mt-0.5 shrink-0 text-gold" />
+                {x}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[0.74rem] text-faint">It's evolving — feedback and ideas are welcome.</p>
         </Card>
 
         {/* Credit */}

@@ -1,5 +1,13 @@
 /* node --experimental-transform-types scripts/puzzles_test.ts */
-import { generatePuzzle, gradePuzzle, RFI_PCT, type DrillAction } from "../src/engine/puzzles.ts";
+import {
+  generatePuzzle,
+  generatePushFold,
+  puzzleFromLeak,
+  gradePuzzle,
+  RFI_PCT,
+  type DrillAction,
+  type LeakSpot,
+} from "../src/engine/puzzles.ts";
 import { topPercentRange } from "../src/engine/ranges.ts";
 
 let passed = 0;
@@ -44,7 +52,43 @@ for (let i = 0; i < 800; i++) {
   if (p.kind === "postflop-bet") ok(p.equity !== undefined && p.potOdds !== undefined, "postflop-bet has equity/odds");
 }
 
-ok(kinds.size === 4, `all four puzzle kinds generated (${[...kinds].join(",")})`);
+ok(kinds.size === 4, `all four cash puzzle kinds generated (${[...kinds].join(",")})`);
+
+// Push/Fold
+for (let i = 0; i < 400; i++) {
+  const p = generatePushFold();
+  ok(p.kind === "pushfold", "pushfold kind");
+  ok(p.street === "preflop" && p.board.length === 0, "pushfold is preflop, no board");
+  ok(p.options.length === 2, "pushfold has 2 options");
+  ok(p.accept.includes(p.best) && p.options.some((o) => o.action === p.best), "pushfold best offered & accepted");
+  ok(gradePuzzle(p, p.best).correct, "pushfold best grades correct");
+}
+
+// Leak → puzzle
+const spot: LeakSpot = {
+  id: "x",
+  street: "flop",
+  heroPos: "BTN",
+  hole: ["Ah", "Kd"],
+  board: ["As", "7c", "2d"],
+  pot: 120,
+  toCall: 40,
+  bb: 20,
+  oppActive: ["BB"],
+  options: [
+    { action: "fold", label: "Fold" },
+    { action: "call", label: "Call", amount: 40 },
+    { action: "raise", label: "Raise", amount: 160 },
+  ],
+  best: "fold",
+  rationale: "test",
+  ts: 0,
+};
+const lp = puzzleFromLeak(spot);
+ok(lp.kind === "leak" && lp.best === "fold", "leak puzzle kind/best");
+ok(gradePuzzle(lp, "fold").correct && !gradePuzzle(lp, "call").correct, "leak grading");
+ok(lp.seats.some((s) => s.isHero && s.pos === "BTN"), "leak hero seat positioned");
+ok(lp.frames.length >= 2, "leak has frames");
 
 console.log(`\nPuzzle tests: ${passed} passed, ${failed} failed.`);
 process.exit(failed === 0 ? 0 : 1);

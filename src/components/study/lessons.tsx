@@ -12,6 +12,7 @@ import { PotOddsDrill, OutsDrill, RangeBuildDrill } from "./Drills";
 import { BluffCalculator } from "./BluffCalculator";
 import { Term, GLOSSARY } from "./Term";
 import { MultiwayEquityTrainer } from "./MultiwayEquityTrainer";
+import { EquityCalculator } from "./EquityCalculator";
 
 /* ---- prose helpers ---- */
 const Lead = ({ children }: { children: ReactNode }) => (
@@ -936,6 +937,20 @@ export const LEVELS: Level[] = [
               cells, or paint your own and watch the combo count — the same count the EV Coach quotes.
             </Lead>
             <RangeExplorer />
+          </>
+        ),
+      },
+      {
+        id: "equity-calculator",
+        title: "Equity Calculator",
+        minutes: 5,
+        body: () => (
+          <>
+            <Lead>
+              A free-form equity tool. Paint any two ranges, set a board, and the same Monte-Carlo engine
+              the coach uses tells you how often you win.
+            </Lead>
+            <EquityCalculator />
           </>
         ),
       },

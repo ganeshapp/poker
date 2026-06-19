@@ -152,6 +152,67 @@ export function equityVsField(hero: IntCombo, board: number[], numOpponents: num
   return { equity: equitySum / samples, win, tie, lose, samples };
 }
 
+/**
+ * Equity of a hero range vs a villain range on a (partial) board.
+ * Each trial samples one combo from each range (rejecting card clashes),
+ * deals the runout, and compares. Powers the free-form equity calculator.
+ */
+export function equityRangeVsRange(
+  heroRange: IntCombo[],
+  board: number[],
+  villRange: IntCombo[],
+  iters = 3000,
+): EquityResult {
+  const boardSet = new Set(board);
+  const hero = heroRange.filter((c) => !boardSet.has(c[0]) && !boardSet.has(c[1]));
+  const vill = villRange.filter((c) => !boardSet.has(c[0]) && !boardSet.has(c[1]));
+  if (hero.length === 0 || vill.length === 0) {
+    return { equity: 0.5, win: 0, tie: 0, lose: 0, samples: 0 };
+  }
+  const need = 5 - board.length;
+  let win = 0;
+  let tie = 0;
+  let lose = 0;
+
+  for (let it = 0; it < iters; it++) {
+    const h = hero[(Math.random() * hero.length) | 0];
+    let v = vill[(Math.random() * vill.length) | 0];
+    let tries = 0;
+    while (
+      (h[0] === v[0] || h[0] === v[1] || h[1] === v[0] || h[1] === v[1]) &&
+      tries < 8
+    ) {
+      v = vill[(Math.random() * vill.length) | 0];
+      tries++;
+    }
+    if (h[0] === v[0] || h[0] === v[1] || h[1] === v[0] || h[1] === v[1]) continue;
+
+    const used = new Set<number>([...board, h[0], h[1], v[0], v[1]]);
+    const avail: number[] = [];
+    for (let i = 0; i < 52; i++) if (!used.has(i)) avail.push(i);
+
+    let len = avail.length;
+    const draw: number[] = [];
+    for (let k = 0; k < need; k++) {
+      const j = (Math.random() * len) | 0;
+      len--;
+      const t = avail[j];
+      avail[j] = avail[len];
+      avail[len] = t;
+      draw.push(t);
+    }
+
+    const hs = evaluateInts([h[0], h[1], ...board, ...draw]).score;
+    const vs = evaluateInts([v[0], v[1], ...board, ...draw]).score;
+    if (hs > vs) win++;
+    else if (hs < vs) lose++;
+    else tie++;
+  }
+
+  const samples = win + tie + lose;
+  return { equity: samples ? (win + tie / 2) / samples : 0.5, win, tie, lose, samples };
+}
+
 /** Hero equity vs a single uniformly-random opponent hand. */
 export function equityVsRandom(hero: IntCombo, board: number[], iters = 1200): EquityResult {
   const used = new Set<number>([hero[0], hero[1], ...board]);

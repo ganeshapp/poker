@@ -17,6 +17,8 @@ import type {
   Street,
 } from "@/types/poker";
 import { useStats } from "./statsStore";
+import { useLeaks } from "./leakStore";
+import type { DrillAction, DrillOption } from "@/engine/puzzles";
 
 export type Verdict = "mistake" | "thin" | "ok" | "great" | "info";
 
@@ -501,6 +503,41 @@ export const useGame = create<GameStore>((set, get) => {
             villainArchetype: review.villainArchetype ?? null,
             ts: Date.now(),
           });
+
+          // Capture clear mistakes so they can be re-drilled in "My leaks".
+          if (review.verdict === "mistake") {
+            const la2 = legalActions(t);
+            const bb = t.bigBlind;
+            const best: DrillAction = a.type === "call" ? "fold" : a.type === "fold" ? "call" : a.type;
+            const options: DrillOption[] =
+              la2.toCall > 0
+                ? [
+                    { action: "fold", label: "Fold" },
+                    { action: "call", label: `Call ${(la2.callAmount / bb).toFixed(1)} bb`, amount: la2.callAmount },
+                    { action: "raise", label: "Raise", amount: Math.round(t.pot + la2.callAmount) },
+                  ]
+                : [
+                    { action: "check", label: "Check" },
+                    { action: "bet", label: "Bet", amount: Math.round(t.pot * 0.66) },
+                  ];
+            useLeaks.getState().add({
+              id: `${t.handNumber}-${t.street}-${Date.now()}`,
+              street: t.street,
+              heroPos: t.players[0].position,
+              hole: t.players[0].hole as [Card, Card],
+              board: [...t.board],
+              pot: t.pot,
+              toCall: la2.callAmount,
+              bb,
+              oppActive: t.players.filter((p) => !p.isHero && !p.hasFolded).map((p) => p.position),
+              options,
+              best,
+              rationale: review.text,
+              equity: review.equity,
+              potOdds: review.potOdds,
+              ts: Date.now(),
+            });
+          }
         }
       }
       if (!(review && review.blocking)) maybeAutoLoop();

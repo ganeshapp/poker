@@ -6,6 +6,7 @@ import { DrillsView } from "@/views/DrillsView";
 import { StudyView } from "@/views/StudyView";
 import { StatsView } from "@/views/StatsView";
 import { AboutView } from "@/views/AboutView";
+import { useTheme } from "@/store/themeStore";
 import { cx } from "@/lib/cx";
 
 type Tab = "play" | "drills" | "study" | "stats" | "about";
@@ -20,6 +21,8 @@ const NAV: { id: Tab; label: string; icon: IconName }[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("play");
+  const theme = useTheme((s) => s.theme);
+  const toggleTheme = useTheme((s) => s.toggle);
 
   return (
     <div className="app-backdrop flex h-screen w-screen overflow-hidden">
@@ -45,6 +48,16 @@ export default function App() {
         </div>
 
         <div className="mt-auto space-y-3">
+          <button
+            onClick={toggleTheme}
+            className="flex w-full items-center justify-between rounded-xl border border-[var(--line)] bg-ink-800/70 px-3 py-2 text-sm font-semibold text-muted transition hover:text-[var(--text)]"
+          >
+            <span className="flex items-center gap-2">
+              <Icon name={theme === "dark" ? "moon" : "sun"} size={16} />
+              {theme === "dark" ? "Dark" : "Light"} mode
+            </span>
+            <span className="text-[0.66rem] text-faint">switch</span>
+          </button>
           <div className="rounded-xl border border-gold/20 bg-gold/[0.06] p-3 text-[0.72rem] leading-relaxed text-muted">
             <div className="mb-0.5 flex items-center gap-1.5 font-semibold text-gold-light">
               <Icon name="bolt" size={13} /> Tip

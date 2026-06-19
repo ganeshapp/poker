@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useGame } from "@/store/gameStore";
-import { formatSession } from "@/game/handHistory";
+import { formatSession, type HHHand } from "@/game/handHistory";
+import { HandReplayModal } from "./HandReplayModal";
 import { saveText, copyText } from "@/lib/exportFile";
 import { fmtSigned } from "@/lib/format";
 import { Modal } from "@/components/ui/Dialog";
@@ -15,6 +16,7 @@ export function SessionSummaryModal() {
   const newSession = useGame((s) => s.newSession);
   const closeSummary = useGame((s) => s.closeSummary);
   const [msg, setMsg] = useState<string | null>(null);
+  const [replay, setReplay] = useState<HHHand | null>(null);
 
   if (!sessionEnded) return null;
 
@@ -39,7 +41,8 @@ export function SessionSummaryModal() {
   };
 
   return (
-    <Modal
+    <>
+      <Modal
       open={sessionEnded}
       onOpenChange={(o) => !o && closeSummary()}
       maxWidth={520}
@@ -55,9 +58,39 @@ export function SessionSummaryModal() {
           <Stat label="Biggest loss" value={`${fmtSigned(worst)} bb`} tone="bad" />
         </div>
         <div className="text-[0.78rem] text-muted">
-          {showdowns} hand{showdowns === 1 ? "" : "s"} reached showdown. Export the full history to review
-          it in a poker tracker or replayer.
+          {showdowns} hand{showdowns === 1 ? "" : "s"} reached showdown. Replay any hand below, or export
+          the full history for a poker tracker.
         </div>
+
+        {session.history.length > 0 && (
+          <div className="rounded-xl border border-[var(--line)] bg-ink-850 p-2">
+            <div className="mb-1 px-1 text-[0.66rem] font-semibold uppercase tracking-wide text-faint">
+              Review hands
+            </div>
+            <div className="max-h-[170px] space-y-1 overflow-auto pr-1">
+              {[...session.history].reverse().map((h) => (
+                <div
+                  key={h.id}
+                  className="flex items-center justify-between rounded-lg px-2 py-1.5 text-[0.8rem] hover:bg-white/5"
+                >
+                  <span className="text-[var(--text)]">Hand #{h.id}</span>
+                  <span
+                    className="mono"
+                    style={{ color: h.heroNet >= 0 ? "var(--good)" : "var(--bad)" }}
+                  >
+                    {fmtSigned(h.heroNet / bb)} bb
+                  </span>
+                  <button
+                    onClick={() => setReplay(h)}
+                    className="flex items-center gap-1 text-[0.74rem] font-semibold text-gold hover:text-gold-light"
+                  >
+                    <Icon name="play" size={12} /> Replay
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {msg && (
           <div className="rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-[0.78rem] text-good">{msg}</div>
@@ -75,7 +108,9 @@ export function SessionSummaryModal() {
           </Button>
         </div>
       </div>
-    </Modal>
+      </Modal>
+      <HandReplayModal hand={replay} onClose={() => setReplay(null)} />
+    </>
   );
 }
 

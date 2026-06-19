@@ -14,7 +14,7 @@ import { equityVsRange, comboToInts } from "./equity.ts";
    ================================================================== */
 
 export type DrillAction = "fold" | "check" | "call" | "bet" | "raise";
-export type PuzzleKind = "rfi" | "vs-raise" | "postflop-bet" | "postflop-check";
+export type PuzzleKind = "rfi" | "vs-raise" | "postflop-bet" | "postflop-check" | "pushfold" | "leak";
 
 export interface DrillOption {
   action: DrillAction;
@@ -389,6 +389,158 @@ export function generatePuzzle(): Puzzle {
   if (roll < 0.55) return genVsRaise();
   if (roll < 0.85) return genPostflopBet();
   return genPostflopCheck();
+}
+
+/* ----------------------------- Push/Fold (Nash-style) ----------------------------- */
+
+const SHOVE_BASE: Partial<Record<Position, number>> = { UTG: 16, MP: 22, CO: 38, BTN: 55, SB: 50 };
+const CALL_BASE: Partial<Record<Position, number>> = { BTN: 38, CO: 30, SB: 42 };
+
+const clampPct = (x: number) => Math.max(4, Math.min(92, Math.round(x)));
+
+export function generatePushFold(): Puzzle {
+  const deck = shuffle(makeDeck());
+  const hole: [Card, Card] = [deck[0], deck[1]];
+  const label = cardsToLabel(hole[0], hole[1]);
+  const stack = rint(8, 14); // bb
+  const stackFactor = 1 + (10 - stack) * 0.04; // shorter → wider
+
+  if (Math.random() < 0.6) {
+    // Open-shove: folded to hero late
+    const heroPos = (["MP", "CO", "BTN", "SB"] as Position[])[rint(0, 3)];
+    const pct = clampPct((SHOVE_BASE[heroPos] ?? 20) * stackFactor);
+    const inRange = topPercentRange(pct).has(label);
+    const best: DrillAction = inRange ? "raise" : "fold";
+    const heroIdx = ORDER.indexOf(heroPos);
+    const foldedBefore = ORDER.slice(0, heroIdx).filter((p) => p !== "SB" && p !== "BB");
+    const pot = SB + BBV;
+    const frames: DrillFrame[] = [
+      { text: `${stack} bb stacks. Blinds ${SB}/${BBV}.`, street: "preflop", board: [], pot },
+    ];
+    for (const p of foldedBefore) frames.push({ text: `${p} folds.`, street: "preflop", board: [], pot });
+    frames.push({ text: `Folded to you in the ${heroPos} with ${stack} bb. Shove or fold?`, street: "preflop", board: [], pot });
+
+    return {
+      id: SEQ++,
+      kind: "pushfold",
+      source: "chart",
+      street: "preflop",
+      heroPos,
+      hole,
+      handLabel: label,
+      board: [],
+      pot,
+      toCall: heroPos === "SB" ? BBV - SB : BBV,
+      bb: BBV,
+      seats: fullSeats(heroPos, foldedBefore, ORDER.filter((p) => (p === "SB" || p === "BB") && p !== heroPos)),
+      frames,
+      options: [
+        { action: "fold", label: "Fold" },
+        { action: "raise", label: `Shove ${stack} bb`, amount: stack },
+      ],
+      best,
+      accept: [best],
+      rationale: `~${stack} bb, folded to you in the ${heroPos}. A Nash-style open-shove range here is about the top ${pct}% of hands — ${label} is ${inRange ? "in it, so jam" : "outside it, so fold"}.`,
+      difficulty: 2,
+    };
+  }
+
+  // Call a shove from the BB
+  const shoverPos = (["BTN", "CO", "SB"] as Position[])[rint(0, 2)];
+  const pct = clampPct((CALL_BASE[shoverPos] ?? 32) * stackFactor);
+  const inRange = topPercentRange(pct).has(label);
+  const best: DrillAction = inRange ? "call" : "fold";
+  const pot = r1(SB + BBV + stack);
+  const frames: DrillFrame[] = [
+    { text: `${stack} bb stacks. Blinds ${SB}/${BBV}.`, street: "preflop", board: [], pot: SB + BBV },
+    { text: `${shoverPos} moves all-in for ${stack} bb.`, street: "preflop", board: [], pot },
+    { text: `Action on you in the BB. Call or fold?`, street: "preflop", board: [], pot },
+  ];
+  return {
+    id: SEQ++,
+    kind: "pushfold",
+    source: "chart",
+    street: "preflop",
+    heroPos: "BB",
+    hole,
+    handLabel: label,
+    board: [],
+    pot,
+    toCall: r1(stack - BBV),
+    bb: BBV,
+    seats: fullSeats("BB", ORDER.filter((p) => p !== "BB" && p !== shoverPos), [shoverPos]),
+    frames,
+    options: [
+      { action: "fold", label: "Fold" },
+      { action: "call", label: `Call ${r1(stack - BBV)} bb`, amount: r1(stack - BBV) },
+    ],
+    best,
+    accept: [best],
+    rationale: `Facing a ${stack} bb shove from the ${shoverPos}. A Nash-style calling range is about the top ${pct}% — ${label} ${inRange ? "is a call" : "is a fold"}.`,
+    difficulty: 2,
+  };
+}
+
+/* ----------------------------- Leak replay ----------------------------- */
+
+export interface LeakSpot {
+  id: string;
+  street: Street;
+  heroPos: Position;
+  hole: [Card, Card];
+  board: Card[];
+  pot: number;
+  toCall: number;
+  bb: number;
+  oppActive: Position[];
+  options: DrillOption[];
+  best: DrillAction;
+  rationale: string;
+  equity?: number;
+  potOdds?: number;
+  ts: number;
+}
+
+/** Rebuild a playable puzzle from a saved leak spot. */
+export function puzzleFromLeak(spot: LeakSpot): Puzzle {
+  const folded = ORDER.filter((p) => p !== spot.heroPos && !spot.oppActive.includes(p));
+  const streetLabel = spot.street[0].toUpperCase() + spot.street.slice(1);
+  const frames: DrillFrame[] = [
+    {
+      text: spot.board.length ? `${streetLabel}: ${spot.board.join(" ")}` : "Pre-flop.",
+      street: spot.street,
+      board: [...spot.board],
+      pot: spot.pot,
+    },
+    {
+      text: `Action on you in the ${spot.heroPos}${spot.toCall > 0 ? ` facing ${(spot.toCall / spot.bb).toFixed(1)} bb` : ""}. What's the play?`,
+      street: spot.street,
+      board: [...spot.board],
+      pot: spot.pot,
+    },
+  ];
+  return {
+    id: SEQ++,
+    kind: "leak",
+    source: "heuristic",
+    street: spot.street,
+    heroPos: spot.heroPos,
+    hole: spot.hole,
+    handLabel: cardsToLabel(spot.hole[0], spot.hole[1]),
+    board: spot.board,
+    pot: spot.pot,
+    toCall: spot.toCall,
+    bb: spot.bb,
+    seats: fullSeats(spot.heroPos, folded, spot.oppActive),
+    frames,
+    options: spot.options,
+    best: spot.best,
+    accept: [spot.best],
+    rationale: spot.rationale,
+    equity: spot.equity,
+    potOdds: spot.potOdds,
+    difficulty: 2,
+  };
 }
 
 export interface GradeResult {

@@ -135,3 +135,93 @@ export function formatHand(h: HHHand): string {
 export function formatSession(hands: HHHand[]): string {
   return hands.map(formatHand).join("\n\n\n");
 }
+
+/* ---- Step-by-step replay frames (for the in-app hand replayer) ---- */
+
+export interface ReplayFrame {
+  text: string;
+  street: Street;
+  board: Card[];
+  pot: number;
+  folded: number[];
+  revealAll?: boolean;
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+export function buildReplayFrames(h: HHHand): ReplayFrame[] {
+  const frames: ReplayFrame[] = [];
+  const committed: Record<number, number> = {};
+  for (const s of h.seats) committed[s.seat] = 0;
+  committed[h.sbSeat] = h.sb;
+  committed[h.bbSeat] = h.bb;
+  let pot = h.sb + h.bb;
+  const folded: number[] = [];
+  const bb = (chips: number) => {
+    const v = chips / h.bb;
+    return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  };
+
+  frames.push({ text: `Blinds ${bb(h.sb)}/${bb(h.bb)} bb posted.`, street: "preflop", board: [], pot, folded: [] });
+
+  const STREETS: Street[] = ["preflop", "flop", "turn", "river"];
+  for (const street of STREETS) {
+    const boardForStreet =
+      street === "preflop"
+        ? []
+        : street === "flop"
+          ? h.board.length >= 3 ? h.board.slice(0, 3) : null
+          : street === "turn"
+            ? h.board.length >= 4 ? h.board.slice(0, 4) : null
+            : h.board.length >= 5 ? h.board.slice(0, 5) : null;
+
+    if (street !== "preflop") {
+      if (!boardForStreet) continue;
+      for (const s of h.seats) committed[s.seat] = 0;
+      frames.push({ text: `${cap(street)}: ${boardForStreet.join(" ")}`, street, board: boardForStreet, pot, folded: [...folded] });
+    }
+
+    const vis = boardForStreet ?? [];
+    for (const a of h.actions.filter((x) => x.street === street)) {
+      let text = "";
+      if (a.type === "fold") {
+        folded.push(a.seat);
+        text = `${a.name} folds`;
+      } else if (a.type === "check") {
+        text = `${a.name} checks`;
+      } else if (a.type === "call") {
+        pot += a.amount;
+        committed[a.seat] = (committed[a.seat] || 0) + a.amount;
+        text = `${a.name} calls ${bb(a.amount)} bb${a.allIn ? " (all-in)" : ""}`;
+      } else if (a.type === "bet") {
+        pot += a.amount - (committed[a.seat] || 0);
+        committed[a.seat] = a.amount;
+        text = `${a.name} bets ${bb(a.amount)} bb${a.allIn ? " (all-in)" : ""}`;
+      } else if (a.type === "raise") {
+        pot += a.amount - (committed[a.seat] || 0);
+        committed[a.seat] = a.amount;
+        text = `${a.name} raises to ${bb(a.amount)} bb${a.allIn ? " (all-in)" : ""}`;
+      }
+      frames.push({ text, street, board: vis, pot, folded: [...folded] });
+    }
+  }
+
+  const winnerIds = [...new Set(h.potResults.flatMap((p) => p.winners))];
+  const names = winnerIds.map((id) => h.seats.find((s) => s.seat === id)?.name ?? `Seat ${id + 1}`);
+  const total = h.potResults.reduce((a, b) => a + b.amount, 0);
+  const showdown = h.board.length === 5 && h.seats.length - folded.length > 1;
+  const endStreet: Street =
+    h.board.length >= 5 ? "showdown" : h.board.length === 4 ? "turn" : h.board.length === 3 ? "flop" : "preflop";
+  frames.push({
+    text: names.length ? `${names.join(", ")} win ${bb(total)} bb.` : "Hand over.",
+    street: endStreet,
+    board: [...h.board],
+    pot,
+    folded: [...folded],
+    revealAll: showdown,
+  });
+
+  return frames;
+}

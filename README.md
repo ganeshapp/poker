@@ -19,14 +19,19 @@ Built by [Gapp](https://www.gapp.in).
 - **Inline EV Coach.** On each decision the engine runs a Monte-Carlo equity sim vs. the villain's
   perceived range — or, multiway, vs. the whole field. Clear −EV calls pause the hand; every note
   shows the step-by-step math, lets you view the assumed range, and stays reopenable.
-- **GTO Drills.** Chess-puzzle practice: a dealt spot with a move-navigator to replay the hand to the
-  decision point, then fold/call/raise for instant feedback and a self-adjusting rating. Pre-flop is
-  graded by position charts (GTO-derived); post-flop by pot-odds/equity heuristics.
-- **Study.** A 5-level, 25-lesson course (rules → position → ranges → outs/equity → pot-odds/EV →
+- **GTO Drills.** Chess-puzzle practice with a move-navigator to replay the spot to the decision point,
+  then fold/call/raise for instant feedback and a self-adjusting rating. Three modes: **Mixed** (cash
+  spots — pre-flop graded by GTO-derived charts, post-flop by pot-odds/equity), **Push/Fold**
+  (short-stack Nash-style shove/call spots), and **My Leaks** (your own coach-flagged mistakes,
+  re-served until you fix them).
+- **Study.** A 5-level, 26-lesson course (rules → position → ranges → outs/equity → pot-odds/EV →
   hand-reading → bet-sizing → implied odds → SPR → multiway) with interactive range, pot-odds, bluff
-  and multiway-equity calculators, a cheat sheet, a hover glossary, and optional quizzes.
+  and multiway-equity calculators, a **free-form equity calculator** (any range vs range on any board),
+  a cheat sheet, a hover glossary, and optional quizzes.
 - **Stats & export.** bb/100 trend, range-read accuracy, results vs. each archetype, a coaching review
-  of your leaks, and one-click export of a session as a PokerStars-style hand history (.txt).
+  of your leaks, a **step-by-step hand replayer** for any session hand, and one-click export of a
+  session as a PokerStars-style hand history (.txt).
+- **Light or dark theme.** Switch from the sidebar; your choice is remembered.
 
 ## Two ways to run it
 
@@ -118,6 +123,34 @@ Tauri v2 + Rust · React 18 + TypeScript + Vite · Zustand · Tailwind CSS · Ra
   equity heuristics — solid fundamentals, not a solver.
 - It's a play-money trainer. Variance is real, so judge yourself on decision quality (the coach), not
   short-term results.
+
+## Roadmap
+
+Prioritised by benefit vs. effort, quick wins first. All-In is, and will remain, **offline-first and
+play-money only** — so there's no pile of online/real-money "maybes" here; it simply isn't that kind of
+app. Nothing below is committed; it's a public to-do.
+
+### Recently shipped
+
+Hand replayer · free-form equity calculator · push/fold (Nash-style) trainer · "train your leaks"
+drills · light & dark themes.
+
+### Next up — high benefit, low/medium effort
+
+| Feature | Benefit | Effort |
+|---|---|---|
+| **Desktop auto-update** — the app checks Releases and one-click updates (Tauri updater; needs a code-signing key + CI secrets) | High | Med |
+| **Configurable table** — 6/9-max, stack depth, antes, straddle | Med | Med |
+| **Gamification** — daily goal, streak calendar, achievements | Med | Low |
+| **PWA install + offline cache** for the web build | Med | Low |
+
+### Bigger bets — high value, more work
+
+| Feature | Benefit | Effort |
+|---|---|---|
+| **Adaptive bots + difficulty levels** and more archetypes | Med–High | Med–High |
+| **Live observed-stats HUD + villain notes** (stats that build as you play) | Med | Med–High |
+| **Responsive / mobile** layout (or a Tauri-mobile build) | Med–High | Med–High |
 
 ## Credits
 

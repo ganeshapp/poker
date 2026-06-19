@@ -13,7 +13,13 @@ export function DrillControls() {
   const next = useDrills((s) => s.next);
 
   const sourceLabel =
-    puzzle.source === "chart" ? "Pre-flop chart · GTO-derived" : "Post-flop heuristic · fundamentals";
+    puzzle.kind === "leak"
+      ? "Your flagged spot"
+      : puzzle.kind === "pushfold"
+        ? "Push/Fold · Nash-style"
+        : puzzle.source === "chart"
+          ? "Pre-flop chart · GTO-derived"
+          : "Post-flop heuristic · fundamentals";
 
   return (
     <div className="rounded-2xl border border-[var(--line)] bg-ink-800/70 p-4">
@@ -64,9 +70,11 @@ export function DrillControls() {
             >
               {result.correct ? "Correct" : "Not optimal"}
             </span>
-            <span className="mono ml-auto text-sm font-bold" style={{ color: ratingDelta >= 0 ? "var(--good)" : "var(--bad)" }}>
-              {fmtSigned(ratingDelta, 0)}
-            </span>
+            {ratingDelta !== 0 && (
+              <span className="mono ml-auto text-sm font-bold" style={{ color: ratingDelta >= 0 ? "var(--good)" : "var(--bad)" }}>
+                {fmtSigned(ratingDelta, 0)}
+              </span>
+            )}
           </div>
 
           <p className="mt-2 text-[0.84rem] leading-relaxed text-muted">{result.rationale}</p>

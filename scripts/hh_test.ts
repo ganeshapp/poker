@@ -1,7 +1,7 @@
 /* Hand-history formatter test:
  *   node --experimental-transform-types scripts/hh_test.ts
  */
-import { formatHand, type HHHand } from "../src/game/handHistory.ts";
+import { formatHand, buildReplayFrames, type HHHand } from "../src/game/handHistory.ts";
 
 let passed = 0;
 let failed = 0;
@@ -68,6 +68,23 @@ has(out, "*** SUMMARY ***");
 has(out, "Total pot 520");
 has(out, "Board [Ah Kd 7c 2s 9h]");
 has(out, "You won (520)");
+
+// ---- Replay frames ----
+const ok = (cond: boolean, msg: string) => {
+  if (cond) passed++;
+  else {
+    failed++;
+    console.error("  FAIL:", msg);
+  }
+};
+const frames = buildReplayFrames(hand);
+ok(frames.length > 4, "replay produces frames");
+ok(frames[0].text.includes("Blinds"), "first replay frame is blinds");
+const lastFrame = frames[frames.length - 1];
+ok(lastFrame.board.length === 5, "final replay frame shows full board");
+ok(lastFrame.revealAll === true, "final frame reveals at showdown");
+ok(lastFrame.pot >= frames[0].pot, "pot grows across replay");
+ok(frames.some((f) => f.street === "flop" && f.board.length === 3), "flop revealed mid-replay");
 
 console.log(`\nHand-history tests: ${passed} passed, ${failed} failed.`);
 process.exit(failed === 0 ? 0 : 1);
