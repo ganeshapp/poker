@@ -1,4 +1,5 @@
 import type { Player } from "@/types/poker";
+import { useSettings } from "@/store/settingsStore";
 import { cx } from "@/lib/cx";
 import { fmtBb } from "@/lib/format";
 import { ARCHETYPES } from "@/game/archetypes";
@@ -33,7 +34,8 @@ function actionTone(label?: string): string {
 }
 
 export function Seat({ player, bb, isCurrent, isButton, isWinner, canGuess, onGuess }: SeatProps) {
-  const showHole = player.isHero || player.revealed;
+  const realistic = useSettings((st) => st.realisticReveal);
+  const showHole = player.isHero || (player.revealed && !(realistic && player.hasFolded));
   const color = player.isHero ? "var(--gold)" : player.archetype ? ARCHETYPES[player.archetype].color : "#888";
   const holeW = player.isHero ? 46 : 36;
   const initial = player.isHero ? "Y" : player.name[0];

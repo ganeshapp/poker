@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Card, HandLabel } from "@/types/poker";
 import { RANKS_DESC, SUITS } from "@/types/poker";
 import { labelToCombos } from "@/engine/notation";
-import { cardToInt, SUIT_SYMBOL, isRedSuit } from "@/engine/cards";
+import { cardToInt, SUIT_SYMBOL } from "@/engine/cards";
 import { comboToInts, type EquityResult } from "@/engine/equity";
 import { engine as math } from "@/engine/engineClient";
 import { allLabels } from "@/engine/notation";
@@ -100,7 +100,7 @@ export function EquityCalculator() {
                     "h-7 w-7 rounded text-[0.72rem] font-bold transition disabled:opacity-30",
                     on ? "bg-gold text-ink-900" : "bg-ink-700 hover:bg-ink-600",
                   )}
-                  style={!on ? { color: isRedSuit(s) ? "var(--suit-red)" : "var(--text)" } : undefined}
+                  style={!on ? { color: `var(--suit-${s})` } : undefined}
                 >
                   {r === "T" ? "10" : r}
                   {SUIT_SYMBOL[s]}

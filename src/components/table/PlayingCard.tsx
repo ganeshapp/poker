@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Card } from "@/types/poker";
-import { SUIT_SYMBOL, cardRank, cardSuit, isRedSuit } from "@/engine/cards";
+import { SUIT_SYMBOL, cardRank, cardSuit } from "@/engine/cards";
 import { cx } from "@/lib/cx";
 
 interface PlayingCardProps {
@@ -42,7 +42,7 @@ export function PlayingCard({ card, faceDown, w = 46, className, style, dim }: P
 
   const r = cardRank(card);
   const s = cardSuit(card);
-  const color = isRedSuit(s) ? "var(--suit-red)" : "var(--suit-black)";
+  const color = `var(--suit-${s})`;
   const rankText = r === "T" ? "10" : r;
 
   return (

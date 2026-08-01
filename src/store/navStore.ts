@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type Tab = "play" | "drills" | "study" | "stats" | "about";
+export type Tab = "play" | "drills" | "study" | "stats" | "settings" | "about";
 
 /** App-level navigation, so any surface can deep-link (e.g. drill
     feedback -> the Study lesson that teaches the concept). */

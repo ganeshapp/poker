@@ -4,6 +4,7 @@ import { decideBot } from "@/game/botBrain";
 import { engine as math } from "@/engine/engineClient";
 import { hashSeed } from "@/engine/equity";
 import { fmtBb, fmtNeed, fmtTimes } from "@/lib/format";
+import { useSettings, coachThresholds } from "./settingsStore";
 import { ARCHETYPES } from "@/game/archetypes";
 import { buildPreflopRanges } from "@/engine/ranges";
 import { combosInSet, comboCount, cardsToLabel } from "@/engine/notation";
@@ -200,15 +201,18 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
         ? math.equityVsRange(hero.hole as [Card, Card], state.board, range, iters, seed)
         : math.equityVsRandom(hero.hole as [Card, Card], state.board, iters, seed);
 
+  const appSettings = useSettings.getState();
+  const { mistakeBb, foldFlagBb } = coachThresholds(appSettings.coachStrictness);
+  const baseIters = appSettings.simQuality === "high" ? 4000 : 1600;
   let equity = 0.5;
   let trials = 0;
   let se = 0;
   let exact = false;
   try {
-    let r = await run(1600, seedBase);
+    let r = await run(baseIters, seedBase);
     // Near the break-even line and still noisy? Escalate before judging.
     if (!r.exact && costNow > 0 && Math.abs(r.equity - threshold) < 2 * r.se) {
-      r = await run(6400, seedBase + 1);
+      r = await run(baseIters * 4, seedBase + 1);
     }
     equity = r.equity;
     trials = r.samples;
@@ -246,7 +250,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
     // Only flag a fold when the call is profitable even at the
     // pessimistic edge of the estimate — never on simulation noise.
     const evCallLow = (equity - margin) * finalPot - cost;
-    if (evCall <= 1.5 * bb || evCallLow <= 0) return null;
+    if (evCall <= foldFlagBb * bb || evCallLow <= 0) return null;
     return {
       ...base,
       blocking: false,
@@ -280,12 +284,12 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
     // A "mistake" needs the call to lose money even at the optimistic
     // edge of the estimate; inside the noise band it's just "close".
     const evActionHigh = (equity + margin) * finalPot - cost;
-    if (evAction < -0.3 * bb && evActionHigh < 0) {
+    if (evAction < mistakeBb * bb && evActionHigh < 0) {
       verdict = "mistake";
       blocking = true;
       plain = `${priceLine} Your hand wins ${fmtTimes(equity)} — not enough. Over time this call loses money; folding is better.`;
       text = `Against ${oppDesc} your ${heroLabel} has only ${pct}% equity, but calling needs ${Math.round(potOdds * 100)}%. This call costs about ${(evAction / bb).toFixed(1)} bb — folding is better.`;
-    } else if (evAction < -0.3 * bb) {
+    } else if (evAction < mistakeBb * bb) {
       verdict = "thin";
       plain = `Genuinely too close to call: the numbers say roughly break-even here. Either choice is fine.`;
       text = `Looks slightly losing (~${(evAction / bb).toFixed(1)} bb), but it's within the simulation's margin of error — either choice is reasonable here.`;

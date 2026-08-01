@@ -1,4 +1,5 @@
 import { useGame } from "@/store/gameStore";
+import { useSettings } from "@/store/settingsStore";
 import type { Card, HandSummary, Player, Street } from "@/types/poker";
 import { fmtSigned } from "@/lib/format";
 import { Button } from "@/components/ui/controls";
@@ -64,7 +65,8 @@ export function ResultOverlay() {
   const winnerHand = s.showdown.find((e) => mainWinners.includes(e.playerId))?.hand;
 
   const color = netBb > 0.01 ? "var(--good)" : netBb < -0.01 ? "var(--bad)" : "var(--text-muted)";
-  const bots = table.players.filter((p) => !p.isHero && p.hole);
+  const realistic = useSettings((st) => st.realisticReveal);
+  const bots = table.players.filter((p) => !p.isHero && p.hole && !(realistic && p.hasFolded));
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-[44%] flex -translate-y-1/2 justify-center">
