@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Card } from "@/types/poker";
-import { equityVsField, comboToInts } from "@/engine/equity";
-import { cardToInt } from "@/engine/cards";
+import { engine as math } from "@/engine/engineClient";
 import { Slider } from "@/components/ui/Slider";
 import { PlayingCard } from "@/components/table/PlayingCard";
 import { fmtPct } from "@/lib/format";
@@ -27,10 +26,18 @@ export function MultiwayEquityTrainer() {
   const [opp, setOpp] = useState(2);
   const sc = SCENARIOS[idx];
 
-  const series = useMemo(() => {
-    const h = comboToInts(sc.hero);
-    const b = sc.board.map(cardToInt);
-    return [1, 2, 3, 4, 5].map((n) => equityVsField(h, b, n, 1200).equity);
+  const [series, setSeries] = useState<number[]>([0, 0, 0, 0, 0]);
+
+  useEffect(() => {
+    let live = true;
+    void Promise.all(
+      [1, 2, 3, 4, 5].map((n) => math.equityVsField(sc.hero, sc.board, n, 1200)),
+    ).then((rs) => {
+      if (live) setSeries(rs.map((r) => r.equity));
+    });
+    return () => {
+      live = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
 

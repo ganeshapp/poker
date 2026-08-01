@@ -488,10 +488,17 @@ export const useGame = create<GameStore>((set, get) => {
       const t = get().table;
       if (t.phase !== "betting" || t.toAct !== 0) return;
       const id = reviewSeq++;
-      const review = get().settings.coachEnabled ? await evaluateHero(t, a, id) : null;
+      const coachEnabled = get().settings.coachEnabled;
+      // Apply the action immediately — the coach evaluates in the
+      // background and pauses auto-play if the verdict is blocking.
       applyStep(0, a);
+      maybeAutoLoop();
+      if (!coachEnabled) return;
+      const review = await evaluateHero(t, a, id);
       if (review) {
-        pushReview(review);
+        // Stats and leaks always record; the panel (and a blocking
+        // pause) only if the verdict still belongs to the current hand.
+        if (get().table.handNumber === t.handNumber) pushReview(review);
         if (review.kind === "decision") {
           useStats.getState().recordDecision({
             verdict: review.verdict,
@@ -541,7 +548,6 @@ export const useGame = create<GameStore>((set, get) => {
           }
         }
       }
-      if (!(review && review.blocking)) maybeAutoLoop();
     },
 
     stepBot: () => {

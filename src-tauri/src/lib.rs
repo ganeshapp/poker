@@ -69,6 +69,7 @@ pub fn run() {
             evaluate_hand,
             equity_vs_range,
             equity_vs_random,
+            equity_vs_field,
             save_text_file
         ])
         .run(tauri::generate_context!())

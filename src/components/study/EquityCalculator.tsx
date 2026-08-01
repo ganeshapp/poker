@@ -3,7 +3,8 @@ import type { Card, HandLabel } from "@/types/poker";
 import { RANKS_DESC, SUITS } from "@/types/poker";
 import { labelToCombos } from "@/engine/notation";
 import { cardToInt, SUIT_SYMBOL, isRedSuit } from "@/engine/cards";
-import { equityRangeVsRange, comboToInts, type EquityResult } from "@/engine/equity";
+import { comboToInts, type EquityResult } from "@/engine/equity";
+import { engine as math } from "@/engine/engineClient";
 import { allLabels } from "@/engine/notation";
 import { RangeMatrix, RangeLegend } from "@/components/range/RangeMatrix";
 import { Button } from "@/components/ui/controls";
@@ -37,17 +38,17 @@ export function EquityCalculator() {
     setResult(null);
   };
 
-  const run = () => {
+  const run = async () => {
     const heroCombos = expand(hero, board);
     const villCombos = expand(vill, board);
     if (!heroCombos.length || !villCombos.length) return;
     setBusy(true);
-    // defer so the button shows its busy state before the (sync) sim runs
-    setTimeout(() => {
+    try {
       const boardInts = board.map(cardToInt);
-      setResult(equityRangeVsRange(heroCombos, boardInts, villCombos, 5000));
+      setResult(await math.equityRangeVsRange(heroCombos, boardInts, villCombos, 5000));
+    } finally {
       setBusy(false);
-    }, 10);
+    }
   };
 
   const heroEq = result ? result.equity : null;
