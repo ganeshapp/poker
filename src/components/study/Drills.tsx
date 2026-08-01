@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { HandLabel } from "@/types/poker";
-import { topPercentRange } from "@/engine/ranges";
+import { chartToSet } from "@/engine/ranges";
+import { PREFLOP_100 } from "@/data/preflop";
 import { combosInSet, comboCount } from "@/engine/notation";
 import { RangeMatrix, RangeLegend } from "@/components/range/RangeMatrix";
 import { Button } from "@/components/ui/controls";
@@ -229,12 +230,18 @@ export function OutsDrill() {
   );
 }
 
-/* ---------- Range-building drill ---------- */
-const TARGETS = [
-  { pos: "UTG", pct: 14 },
-  { pos: "CO", pct: 27 },
-  { pos: "BTN", pct: 45 },
-  { pos: "BB", pct: 55 },
+/* ---------- Range-building drill (graded vs the real charts) ---------- */
+const TARGETS: { desc: string; set: Set<HandLabel> }[] = [
+  { desc: "UTG opening range (~15% of hands)", set: chartToSet(PREFLOP_100.rfi.UTG) },
+  { desc: "CO opening range (~26% of hands)", set: chartToSet(PREFLOP_100.rfi.CO) },
+  { desc: "BTN opening range (~45% of hands)", set: chartToSet(PREFLOP_100.rfi.BTN) },
+  {
+    desc: "BB continue range vs a BTN open (calls + 3-bets, ~40%)",
+    set: new Set([
+      ...chartToSet(PREFLOP_100.vsRfi.BB_vs_BTN.call),
+      ...chartToSet(PREFLOP_100.vsRfi.BB_vs_BTN.threebet),
+    ]),
+  },
 ];
 
 function scoreRange(painted: Set<HandLabel>, actual: Set<HandLabel>) {
@@ -253,7 +260,7 @@ export function RangeBuildDrill() {
   const [checked, setChecked] = useState(false);
   const [score, setScore] = useState({ right: 0, total: 0 });
 
-  const actual = topPercentRange(target.pct);
+  const actual = target.set;
   const acc = checked ? scoreRange(painted, actual) : 0;
 
   return (
@@ -286,7 +293,7 @@ export function RangeBuildDrill() {
       }
     >
       <p className="text-[0.92rem] text-[var(--text)]">
-        Paint a standard <b>{target.pos}</b> opening range (about <b>{target.pct}%</b> of hands).
+        Paint the standard <b>{target.desc}</b>.
       </p>
       <div className="mt-3 flex flex-col items-center gap-2">
         {!checked ? (

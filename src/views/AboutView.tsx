@@ -127,10 +127,11 @@ export function AboutView() {
             <li className="flex gap-2">
               <Icon name="info" size={15} className="mt-0.5 shrink-0 text-info" />
               <span>
-                <span className="font-semibold text-[var(--text)]">Pre-flop charts</span> (drills,
-                study diagrams, bot ranges) are simplified ranges built from a hand-strength formula —
-                good fundamentals, but not solver output. Real solver-derived charts are on the
-                roadmap and will replace them.
+                <span className="font-semibold text-[var(--text)]">Pre-flop charts</span> (drills and
+                study diagrams) are self-authored consensus baselines for 100bb 6-max — solid standard
+                play keyed by your position <em>and</em> the raiser's, with mixed frequencies where
+                real strategies mix. They're not direct solver output; bot ranges still use a
+                simplified model that's being upgraded next.
               </span>
             </li>
             <li className="flex gap-2">

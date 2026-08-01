@@ -130,6 +130,23 @@ export function buildPreflopRanges(vpip: number, pfr: number, pos: Position): Pr
   };
 }
 
+/** Labels a frequency chart plays at least `min` of the time, as a set
+    (for 13×13 matrix display and range-building drills). */
+export function chartToSet(chart: Record<string, number>, min = 0.5): Set<HandLabel> {
+  const out = new Set<HandLabel>();
+  for (const [l, f] of Object.entries(chart)) if (f >= min) out.add(l as HandLabel);
+  return out;
+}
+
+/** Combo-weighted width of a frequency chart (fraction of all 1326). */
+export function chartWidth(chart: Record<string, number>): number {
+  let w = 0;
+  for (const [l, f] of Object.entries(chart)) {
+    w += f * (l.length === 2 ? 6 : l.endsWith("s") ? 4 : 12);
+  }
+  return w / 1326;
+}
+
 /** Canonical example ranges used by the Study curriculum. */
 export const STUDY_RANGES: { title: string; pct: number; note: string }[] = [
   { title: "UTG Open (~14%)", pct: 14, note: "Tightest opening range — premium pairs, big broadways, AK–AQ." },
