@@ -1,8 +1,9 @@
-import type { Action, Archetype, GameState, HandLabel } from "../types/poker.ts";
+import type { Action, Archetype, Card, GameState, HandLabel } from "../types/poker.ts";
 import { legalActions } from "./engine.ts";
 import { ARCHETYPES } from "./archetypes.ts";
-import { allLabels, cardsToLabel } from "../engine/notation.ts";
-import { equityVsRandom, comboToInts } from "../engine/equity.ts";
+import { allLabels, cardsToLabel, labelToCombos } from "../engine/notation.ts";
+import { equityVsRandom, comboToInts, hashSeed } from "../engine/equity.ts";
+import { evaluateInts } from "../engine/evaluator.ts";
 import { cardToInt } from "../engine/cards.ts";
 import { PREFLOP_100 } from "../data/preflop.ts";
 
@@ -67,7 +68,21 @@ function betOrRaise(s: GameState, to: number): Action {
   return s.currentBet === 0 ? { type: "bet", amount: to } : { type: "raise", amount: to };
 }
 
+/** Bot decision plus the range it's representing. The stored range is
+    guaranteed to contain the bot's actual hand whenever it continues —
+    mixed-frequency actions would otherwise "prove" impossible holdings
+    and corrupt Peek grading and the coach. */
 export function decideBot(s: GameState, seat: number): BotDecision {
+  const d = decideBotInner(s, seat);
+  const p = s.players[seat];
+  if (d.range != null && d.action.type !== "fold" && p.hole) {
+    const label = cardsToLabel(p.hole[0], p.hole[1]);
+    if (!d.range.includes(label)) d.range = [...d.range, label];
+  }
+  return d;
+}
+
+function decideBotInner(s: GameState, seat: number): BotDecision {
   const p = s.players[seat];
   if (!p.archetype || !p.hole) return { action: { type: "fold" }, range: [] };
   const cfg = ARCHETYPES[p.archetype];
@@ -185,6 +200,11 @@ export function decideBot(s: GameState, seat: number): BotDecision {
   const boardInts = s.board.map(cardToInt);
   const e = equityVsRandom(holeInts, boardInts, 320).equity;
   const facingBet = la.toCall > 0;
+  // Perceived-range bookkeeping: whatever this bot does, its stored
+  // range narrows consistently with the policy that produced the
+  // action (and is guaranteed to contain its actual hand).
+  const stored = s.botRanges[p.id] ?? [];
+  const narrowed = (kind: "aggro" | "call" | "check") => narrowRange(stored, s.board, kind, label);
 
   if (!facingBet) {
     const wantsValue = e > 0.6;
@@ -192,23 +212,82 @@ export function decideBot(s: GameState, seat: number): BotDecision {
     const bluff = Math.random() < cfg.aggression * 0.22;
     if ((wantsValue || cbet || bluff) && la.canBet) {
       const to = clampInt(s.pot * 0.6, la.minRaiseTo, la.maxRaiseTo);
-      if (to > 0) return { action: { type: "bet", amount: to }, range: null };
+      if (to > 0) return { action: { type: "bet", amount: to }, range: narrowed("aggro") };
     }
-    return { action: { type: "check" }, range: null };
+    return { action: { type: "check" }, range: narrowed("check") };
   }
 
   // Facing a bet.
   const needed = la.callAmount / (s.pot + la.callAmount);
   if (e > 0.78 && la.canRaise && Math.random() < cfg.aggression) {
     const to = clampInt(s.currentBet + s.pot * 0.8, la.minRaiseTo, la.maxRaiseTo);
-    return { action: { type: "raise", amount: to }, range: null };
+    return { action: { type: "raise", amount: to }, range: narrowed("aggro") };
   }
   const callThreshold = needed * (1 - cfg.stickiness * 0.5);
   if (e >= callThreshold && la.canCall) {
-    return { action: { type: "call", amount: la.callAmount }, range: null };
+    return { action: { type: "call", amount: la.callAmount }, range: narrowed("call") };
   }
   if (cfg.stickiness > 0.7 && la.canCall && la.callAmount <= s.pot * 0.5 && Math.random() < 0.7) {
-    return { action: { type: "call", amount: la.callAmount }, range: null };
+    return { action: { type: "call", amount: la.callAmount }, range: narrowed("call") };
   }
-  return { action: { type: "fold" }, range: null };
+  return { action: { type: "fold" }, range: [] };
+}
+
+/* ==================================================================
+   Street-by-street range narrowing.
+
+   Ranks every label in the stored range by its strength on the board
+   (exact made-hand score on the river; a short seeded equity sample —
+   which sees draws — on the flop/turn) and keeps the slice consistent
+   with the action: aggression keeps the strong part plus a bluff tail,
+   calling keeps the middle-and-up, checking sheds the very top. The
+   bot's actual label is always retained.
+   ================================================================== */
+
+function representativeCombo(label: HandLabel, blocked: Set<number>): [number, number] | null {
+  for (const [a, b] of labelToCombos(label)) {
+    const ai = cardToInt(a);
+    const bi = cardToInt(b);
+    if (!blocked.has(ai) && !blocked.has(bi)) return [ai, bi];
+  }
+  return null;
+}
+
+export function narrowRange(
+  stored: HandLabel[],
+  board: Card[],
+  kind: "aggro" | "call" | "check",
+  actualLabel: HandLabel,
+): HandLabel[] {
+  if (stored.length <= 8) return stored.includes(actualLabel) ? stored : [...stored, actualLabel];
+  const boardInts = board.map(cardToInt);
+  const blocked = new Set(boardInts);
+  const isRiver = board.length === 5;
+
+  const scored: { label: HandLabel; v: number }[] = [];
+  for (const l of stored) {
+    const combo = representativeCombo(l, blocked);
+    if (!combo) continue; // fully blocked by the board
+    const v = isRiver
+      ? evaluateInts([combo[0], combo[1], ...boardInts]).score
+      : equityVsRandom(combo, boardInts, 80, hashSeed(`${l}|${board.join("")}`)).equity;
+    scored.push({ label: l, v });
+  }
+  scored.sort((a, b) => b.v - a.v);
+
+  const n = scored.length;
+  let kept: HandLabel[];
+  if (kind === "aggro") {
+    // Value region + a thin bluff tail from the bottom (bots do bluff).
+    const top = scored.slice(0, Math.max(5, Math.round(n * 0.45))).map((x) => x.label);
+    const tail = scored.slice(Math.round(n * 0.85)).map((x) => x.label);
+    kept = [...top, ...tail];
+  } else if (kind === "call") {
+    kept = scored.slice(0, Math.max(6, Math.round(n * 0.65))).map((x) => x.label);
+  } else {
+    // Checking sheds the very strongest slice, keeps the rest.
+    kept = scored.slice(Math.round(n * 0.12)).map((x) => x.label);
+  }
+  if (!kept.includes(actualLabel) && stored.includes(actualLabel)) kept.push(actualLabel);
+  return kept;
 }
