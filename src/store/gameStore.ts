@@ -48,7 +48,6 @@ export interface GuessSession {
   revealed: boolean;
   scored: boolean;
   actualRange: HandLabel[];
-  botHole: [Card, Card] | null;
   accuracy: number | null;
   precision: number | null;
   recall: number | null;
@@ -606,7 +605,6 @@ export const useGame = create<GameStore>((set, get) => {
           revealed: false,
           scored: false,
           actualRange: [],
-          botHole: null,
           accuracy: null,
           precision: null,
           recall: null,
@@ -629,7 +627,6 @@ export const useGame = create<GameStore>((set, get) => {
           revealed: true,
           scored,
           actualRange: actual,
-          botHole: bot.hole,
           accuracy: score.accuracy,
           precision: score.precision,
           recall: score.recall,
