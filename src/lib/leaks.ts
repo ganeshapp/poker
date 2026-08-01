@@ -8,6 +8,8 @@ export interface DecisionRecord {
   evBb: number;
   street: string;
   villainArchetype: string | null;
+  /** Hero's seat position when the decision was made. */
+  position?: string | null;
   ts: number;
 }
 
