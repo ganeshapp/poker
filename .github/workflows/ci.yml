@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type-check & build web bundle
+        run: npm run build
+
+      - name: Engine & game harnesses
+        run: |
+          node --experimental-transform-types scripts/engine_test.ts
+          node --experimental-transform-types scripts/sim_test.ts
+          node --experimental-transform-types scripts/multiway_test.ts
+          node --experimental-transform-types scripts/hh_test.ts
+          node --experimental-transform-types scripts/leaks_test.ts
+          node --experimental-transform-types scripts/puzzles_test.ts
+
+      - name: Golden files (evaluator scores + bundled charts)
+        run: node --experimental-transform-types scripts/golden_test.ts
+
+      - name: Rust engine tests
+        run: cargo test --manifest-path poker-core/Cargo.toml
+
+      - name: TS ↔ Rust parity
+        run: node --experimental-transform-types scripts/parity_test.ts

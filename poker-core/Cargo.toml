@@ -8,6 +8,9 @@ description = "Hand evaluator and Monte Carlo equity engine for All-In."
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 
+[dev-dependencies]
+serde_json = "1"
+
 [lib]
 name = "poker_core"
 path = "src/lib.rs"
