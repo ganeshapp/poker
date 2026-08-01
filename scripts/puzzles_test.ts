@@ -52,7 +52,7 @@ for (let i = 0; i < 800; i++) {
   if (p.kind === "postflop-bet") ok(p.equity !== undefined && p.potOdds !== undefined, "postflop-bet has equity/odds");
 }
 
-ok(kinds.size === 4, `all four cash puzzle kinds generated (${[...kinds].join(",")})`);
+ok(kinds.size === 7, `all seven cash puzzle kinds generated (${[...kinds].join(",")})`);
 
 // Push/Fold
 for (let i = 0; i < 400; i++) {

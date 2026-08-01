@@ -2,7 +2,7 @@ import type { Card, Position, Street, HandLabel } from "../types/poker.ts";
 import { makeDeck, shuffle, cardToInt } from "./cards.ts";
 import { cardsToLabel, labelToCombos } from "./notation.ts";
 import { topPercentRange, chartWidth } from "./ranges.ts";
-import { equityVsRange, comboToInts, hashSeed } from "./equity.ts";
+import { equityVsRange, equityVsRandom, comboToInts, hashSeed } from "./equity.ts";
 import { NASH_SHOVE, NASH_CALL, type PushFoldPos } from "../data/pushfold.ts";
 import { PREFLOP_100 } from "../data/preflop.ts";
 
@@ -17,7 +17,16 @@ import { PREFLOP_100 } from "../data/preflop.ts";
    ================================================================== */
 
 export type DrillAction = "fold" | "check" | "call" | "bet" | "raise";
-export type PuzzleKind = "rfi" | "vs-raise" | "postflop-bet" | "postflop-check" | "pushfold" | "leak";
+export type PuzzleKind =
+  | "rfi"
+  | "vs-raise"
+  | "postflop-bet"
+  | "postflop-check"
+  | "threebet-pot"
+  | "check-raise"
+  | "river-decision"
+  | "pushfold"
+  | "leak";
 
 export interface DrillOption {
   action: DrillAction;
@@ -452,13 +461,287 @@ function capital(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Generate a random puzzle (weighted across the four kinds). */
+/* ------------- Late-street families (3-bet pots, check-raises,
+   river-as-aggressor) — the spots where the money changes hands ------------- */
+
+/** Rank a label set by strength on a board (seeded, deterministic) and
+    keep the strongest fraction, optionally with a bluff tail. */
+function strengthSlice(labels: HandLabel[], board: Card[], topFrac: number, bluffTail: boolean): HandLabel[] {
+  const boardInts = board.map(cardToInt);
+  const blocked = new Set<Card>(board);
+  // Deterministic per (label, board): seeded 80-iter equity vs random.
+  const ranked = labels
+    .map((l) => {
+      const combos = labelToCombos(l).filter(([a, b]) => !blocked.has(a) && !blocked.has(b));
+      if (!combos.length) return null;
+      const c = comboToInts(combos[0]);
+      const eq = equityVsRandom(c, boardInts, 80, hashSeed(`${l}|${board.join("")}`)).equity;
+      return { l, eq };
+    })
+    .filter((x): x is { l: HandLabel; eq: number } => x !== null)
+    .sort((a, b) => b.eq - a.eq);
+  const top = ranked.slice(0, Math.max(4, Math.round(ranked.length * topFrac))).map((x) => x.l);
+  if (!bluffTail) return top;
+  const tail = ranked.slice(Math.round(ranked.length * 0.85)).map((x) => x.l);
+  return [...top, ...tail];
+}
+
+/** 3-bet pot: hero opened, got 3-bet, called; now faces a c-bet at low SPR. */
+function genThreeBetPot(): Puzzle {
+  const deck = shuffle(makeDeck());
+  const hole: [Card, Card] = [deck[0], deck[1]];
+  const label = cardsToLabel(hole[0], hole[1]);
+  const street: Street = Math.random() < 0.7 ? "flop" : "turn";
+  const { board } = postflopBoard(deck, street);
+  const heroPos: Position = Math.random() < 0.5 ? "CO" : "BTN";
+  const villainPos: Position = Math.random() < 0.5 ? "SB" : "BB";
+
+  // Villain's 3-bet range (hero position is what they 3-bet against).
+  const key = `${villainPos}_vs_${heroPos}`;
+  const tbChart = PREFLOP_100.vsRfi[key]?.threebet ?? PREFLOP_100.vsRfi.BB_vs_BTN.threebet;
+  const villLabels = chartLabels05(tbChart);
+
+  const pot = 20; // ~3-bet pot in bb
+  const bet = r1(pot * [0.4, 0.66][rint(0, 1)]);
+  const totalPot = r1(pot + bet);
+  const blocked = new Set<Card>([...hole, ...board]);
+  const combos = rangeToCombos(villLabels, blocked);
+  const r = combos.length
+    ? equityVsRange(comboToInts(hole), board.map(cardToInt), combos, 3000, hashSeed(`3bp|${hole.join("")}|${board.join("")}`))
+    : null;
+  const eq = r?.equity ?? 0.5;
+  const breakEven = bet / (totalPot + bet);
+  const band = Math.max(0.02, 2 * (r?.se ?? 0));
+
+  let best: DrillAction;
+  let accept: DrillAction[];
+  let closeCall = false;
+  if (eq >= breakEven + band) {
+    best = "call";
+    accept = eq > 0.62 ? ["call", "raise"] : ["call"];
+  } else if (eq <= breakEven - band) {
+    best = "fold";
+    accept = ["fold"];
+  } else {
+    closeCall = true;
+    best = eq >= breakEven ? "call" : "fold";
+    accept = ["fold", "call"];
+  }
+
+  const frames: DrillFrame[] = [
+    { text: `You open ${heroPos} to 2.5 bb; ${villainPos} 3-bets to 9 bb; you call. Heads-up.`, street: "preflop", board: [], pot },
+    { text: `${capital(street)}: ${board.join(" ")} (pot 20 bb — SPR is low: about 4.5).`, street, board: [...board], pot },
+    { text: `${villainPos} c-bets ${bet} bb. Action on you.`, street, board: [...board], pot: totalPot },
+  ];
+
+  return {
+    id: SEQ++,
+    kind: "threebet-pot",
+    source: "heuristic",
+    street,
+    heroPos,
+    hole,
+    handLabel: label,
+    board,
+    pot: totalPot,
+    toCall: bet,
+    bb: BBV,
+    seats: fullSeats(heroPos, ORDER.filter((p) => p !== heroPos && p !== villainPos), [villainPos]),
+    frames,
+    options: [
+      { action: "fold", label: "Fold" },
+      { action: "call", label: `Call ${bet}`, amount: bet },
+      { action: "raise", label: `Raise ${r1(totalPot + bet)}`, amount: r1(totalPot + bet) },
+    ],
+    best,
+    accept,
+    rationale: closeCall
+      ? `Razor-thin in a 3-bet pot: ~${Math.round(eq * 100)}% equity vs a 3-betting range, ${Math.round(breakEven * 100)}% needed — both answers are fine. Remember the low SPR: whatever continues here is often committed.`
+      : `In a 3-bet pot the villain's range is strong (big pairs, big cards) — your ${label} has ~${Math.round(eq * 100)}% equity against it, and you need ${Math.round(breakEven * 100)}%. ${best === "call" ? "That's enough — and at SPR ~4, plan for the rest going in on many runouts." : "Not enough against this range at this price — fold and keep the 9 bb loss small."}`,
+    equity: eq,
+    potOdds: breakEven,
+    difficulty: Math.abs(eq - breakEven) < 0.06 ? 3 : 2,
+    gradeRange: villLabels,
+    gradeRangeTitle: `${villainPos}'s 3-bet range vs ${heroPos}`,
+    lessonId: "threebet-pots",
+    lessonTitle: "Playing 3-Bet Pots",
+  };
+}
+
+/** Facing a check-raise: hero c-bet, the caller check-raised. */
+function genFacingCheckRaise(): Puzzle {
+  const deck = shuffle(makeDeck());
+  const hole: [Card, Card] = [deck[0], deck[1]];
+  const label = cardsToLabel(hole[0], hole[1]);
+  const { board } = postflopBoard(deck, "flop");
+  const heroPos: Position = "BTN";
+  const villainPos: Position = "BB";
+
+  // BB defended, then check-raised: strong slice of the defend range + bluff tail.
+  const defend = chartLabels05({ ...PREFLOP_100.vsRfi.BB_vs_BTN.call, ...PREFLOP_100.vsRfi.BB_vs_BTN.threebet });
+  const villLabels = strengthSlice(defend, board, 0.3, true);
+
+  const potPre = 5.5;
+  const cbet = 2.5;
+  const raiseTo = 8;
+  const toCall = raiseTo - cbet;
+  const pot = r1(potPre + cbet + raiseTo);
+  const blocked = new Set<Card>([...hole, ...board]);
+  const combos = rangeToCombos(villLabels, blocked);
+  const r = combos.length
+    ? equityVsRange(comboToInts(hole), board.map(cardToInt), combos, 3000, hashSeed(`xr|${hole.join("")}|${board.join("")}`))
+    : null;
+  const eq = r?.equity ?? 0.5;
+  const breakEven = toCall / (pot + toCall);
+  const band = Math.max(0.02, 2 * (r?.se ?? 0));
+
+  let best: DrillAction;
+  let accept: DrillAction[];
+  if (eq >= breakEven + band) {
+    best = "call";
+    accept = eq > 0.68 ? ["call", "raise"] : ["call"];
+  } else if (eq <= breakEven - band) {
+    best = "fold";
+    accept = ["fold"];
+  } else {
+    best = eq >= breakEven ? "call" : "fold";
+    accept = ["fold", "call"];
+  }
+
+  const frames: DrillFrame[] = [
+    { text: `You open the ${heroPos} to 2.5 bb, ${villainPos} calls. Heads-up.`, street: "preflop", board: [], pot: potPre },
+    { text: `Flop: ${board.join(" ")}. ${villainPos} checks, you c-bet ${cbet} bb.`, street: "flop", board: [...board], pot: r1(potPre + cbet) },
+    { text: `${villainPos} check-raises to ${raiseTo} bb. Action on you.`, street: "flop", board: [...board], pot },
+  ];
+
+  return {
+    id: SEQ++,
+    kind: "check-raise",
+    source: "heuristic",
+    street: "flop",
+    heroPos,
+    hole,
+    handLabel: label,
+    board,
+    pot,
+    toCall,
+    bb: BBV,
+    seats: fullSeats(heroPos, ORDER.filter((p) => p !== heroPos && p !== villainPos), [villainPos]),
+    frames,
+    options: [
+      { action: "fold", label: "Fold" },
+      { action: "call", label: `Call ${r1(toCall)}`, amount: toCall },
+      { action: "raise", label: `3-bet ${r1(raiseTo * 2.6)}`, amount: r1(raiseTo * 2.6) },
+    ],
+    best,
+    accept,
+    rationale: `A check-raise represents the strong part of ${villainPos}'s defend range plus some draws. Your ${label} has ~${Math.round(eq * 100)}% equity against that, needing ${Math.round(breakEven * 100)}%. ${
+      best === "call"
+        ? "Continue — folding here would let check-raises print money against your c-bets."
+        : best === "fold"
+          ? "Let this one go — c-betting means sometimes folding to check-raises; that's fine when the hand has this little."
+          : "Continue."
+    }`,
+    equity: eq,
+    potOdds: breakEven,
+    difficulty: Math.abs(eq - breakEven) < 0.06 ? 3 : 2,
+    gradeRange: villLabels,
+    gradeRangeTitle: `${villainPos}'s check-raising range (strong hands + draws)`,
+    lessonId: "check-raising",
+    lessonTitle: "Check-Raising",
+  };
+}
+
+/** River as the aggressor: you bet flop and turn; villain called twice
+    and checks the river to you. Value bet or check back? */
+function genRiverDecision(): Puzzle {
+  const deck = shuffle(makeDeck());
+  const hole: [Card, Card] = [deck[0], deck[1]];
+  const label = cardsToLabel(hole[0], hole[1]);
+  const { board } = postflopBoard(deck, "river");
+  const heroPos: Position = "BTN";
+  const villainPos: Position = "BB";
+
+  // Called flop AND turn: the middle-strength slice of the defend range
+  // (twice narrowed; the very top would have raised, the air folded).
+  const defend = chartLabels05(PREFLOP_100.vsRfi.BB_vs_BTN.call);
+  const once = strengthSlice(defend, board.slice(0, 3), 0.65, false);
+  const villLabels = strengthSlice(once, board.slice(0, 4), 0.65, false);
+
+  const pot = 14;
+  const betTo = r1(pot * 0.66);
+  const blocked = new Set<Card>([...hole, ...board]);
+  const combos = rangeToCombos(villLabels, blocked);
+  const r = combos.length
+    ? equityVsRange(comboToInts(hole), board.map(cardToInt), combos, 10, hashSeed(`rv|${hole.join("")}|${board.join("")}`))
+    : null;
+  const eq = r?.equity ?? 0.5; // river = exact enumeration
+  const band = Math.max(0.02, 2 * (r?.se ?? 0));
+
+  let best: DrillAction;
+  let accept: DrillAction[];
+  if (eq > 0.6 + band) {
+    best = "bet";
+    accept = ["bet"];
+  } else if (eq > 0.48 - band) {
+    best = eq > 0.54 ? "bet" : "check";
+    accept = ["bet", "check"];
+  } else {
+    best = "check";
+    accept = ["check"];
+  }
+
+  const frames: DrillFrame[] = [
+    { text: `You open the ${heroPos}, ${villainPos} calls. You bet the flop and turn; ${villainPos} called both.`, street: "preflop", board: [], pot: 5.5 },
+    { text: `River: ${board.join(" ")} (pot ${pot} bb).`, street: "river", board: [...board], pot },
+    { text: `${villainPos} checks. Value bet or check back?`, street: "river", board: [...board], pot },
+  ];
+
+  return {
+    id: SEQ++,
+    kind: "river-decision",
+    source: "heuristic",
+    street: "river",
+    heroPos,
+    hole,
+    handLabel: label,
+    board,
+    pot,
+    toCall: 0,
+    bb: BBV,
+    seats: fullSeats(heroPos, ORDER.filter((p) => p !== heroPos && p !== villainPos), [villainPos]),
+    frames,
+    options: [
+      { action: "check", label: "Check back" },
+      { action: "bet", label: `Bet ${betTo}`, amount: betTo },
+    ],
+    best,
+    accept,
+    rationale:
+      accept.length === 2
+        ? `Against the hands that called twice, your ${label} wins ~${Math.round(eq * 100)}% — right on the value/showdown border, so betting thin and checking back are both fine.`
+        : best === "bet"
+          ? `The hands that called flop and turn still pay off a river bet often enough: ~${Math.round(eq * 100)}% equity against that range. Name the worse hands that call — here there are plenty — and bet.`
+          : `Against the range that called two streets, your ${label} only wins ~${Math.round(eq * 100)}% — worse hands rarely call a third bet. Take the showdown; betting would mostly get called when you're beaten.`,
+    equity: eq,
+    difficulty: Math.abs(eq - 0.55) < 0.08 ? 3 : 2,
+    gradeRange: villLabels,
+    gradeRangeTitle: `${villainPos}'s range after calling flop + turn`,
+    lessonId: "turn-river",
+    lessonTitle: "Turn & River Play",
+  };
+}
+
+/** Generate a random puzzle (weighted across all spot families). */
 export function generatePuzzle(): Puzzle {
   const roll = Math.random();
-  if (roll < 0.3) return genRfi();
-  if (roll < 0.55) return genVsRaise();
-  if (roll < 0.85) return genPostflopBet();
-  return genPostflopCheck();
+  if (roll < 0.22) return genRfi();
+  if (roll < 0.42) return genVsRaise();
+  if (roll < 0.62) return genPostflopBet();
+  if (roll < 0.72) return genPostflopCheck();
+  if (roll < 0.84) return genThreeBetPot();
+  if (roll < 0.92) return genFacingCheckRaise();
+  return genRiverDecision();
 }
 
 /* --------------- Push/Fold (computed Nash equilibrium tables) --------------- */
