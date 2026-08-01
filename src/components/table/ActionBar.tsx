@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/controls";
 import { Slider } from "@/components/ui/Slider";
 import { Icon } from "@/components/ui/Icon";
 import { PlayingCard } from "./PlayingCard";
+import { isTypingTarget, hasModifier } from "@/lib/hotkeys";
 
 const clamp = (x: number, lo: number, hi: number) => Math.round(Math.max(lo, Math.min(hi, x)));
 
@@ -31,25 +32,58 @@ export function ActionBar() {
 
   const [raiseTo, setRaiseTo] = useState(la.minRaiseTo);
 
+  // Numeric bet entry (in bb). null = mirror the slider value.
+  const [betText, setBetText] = useState<string | null>(null);
+  const commitBetText = () => {
+    if (betText !== null) {
+      const v = Number.parseFloat(betText);
+      if (Number.isFinite(v)) setRaiseTo(clamp(v * bb, la.minRaiseTo, la.maxRaiseTo));
+      setBetText(null);
+    }
+  };
+
   useEffect(() => {
     if (!heroToAct) return;
     const base = table.pot + la.toCall;
     const def = table.currentBet > 0 ? table.currentBet + Math.round(base * 0.66) : Math.round(table.pot * 0.66);
     setRaiseTo(clamp(def, la.minRaiseTo, la.maxRaiseTo));
+    setBetText(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table.toAct, table.street, table.currentBet, table.phase, table.handNumber]);
 
-  // Keyboard: ArrowRight steps a bot in manual mode.
+  const canAggro = la.canBet || la.canRaise;
+
+  // Keyboard: F fold · C check/call · R (or Enter) bet/raise the selected
+  // size · Enter next hand · ArrowRight steps a bot in manual mode.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "ArrowRight" && settings.mode === "manual" && botToAct && !paused) {
+      if (isTypingTarget(e) || hasModifier(e)) return;
+      const k = e.key.toLowerCase();
+      if (k === "arrowright" && settings.mode === "manual" && botToAct && !paused) {
         e.preventDefault();
         stepBot();
+        return;
+      }
+      if (k === "enter" && session.active && table.phase === "hand-over") {
+        e.preventDefault();
+        deal();
+        return;
+      }
+      if (!heroToAct) return;
+      if (k === "f") {
+        e.preventDefault();
+        void heroAction({ type: "fold" });
+      } else if (k === "c") {
+        e.preventDefault();
+        void heroAction(la.canCheck ? { type: "check" } : { type: "call" });
+      } else if ((k === "r" || k === "enter") && canAggro) {
+        e.preventDefault();
+        void heroAction({ type: table.currentBet === 0 ? "bet" : "raise", amount: raiseTo });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [settings.mode, botToAct, paused, stepBot]);
+  }, [settings.mode, botToAct, paused, stepBot, heroToAct, la.canCheck, canAggro, raiseTo, table.currentBet, table.phase, session.active, deal, heroAction]);
 
   const setFraction = (frac: number) => {
     const base = table.pot + la.toCall;
@@ -59,7 +93,6 @@ export function ActionBar() {
   };
 
   const handLabel = hero.hole ? cardsToLabel(hero.hole[0], hero.hole[1]) : "";
-  const canAggro = la.canBet || la.canRaise;
   const aggroVerb = table.currentBet === 0 ? "Bet" : "Raise to";
 
   const ExplainBtn = canExplain ? (
@@ -167,15 +200,38 @@ export function ActionBar() {
                       All-in
                     </button>
                   </div>
-                  <Slider
-                    value={raiseTo}
-                    min={la.minRaiseTo}
-                    max={la.maxRaiseTo}
-                    step={Math.max(1, bb / 2)}
-                    onValueChange={setRaiseTo}
-                    ariaLabel="Bet size"
-                    className="w-[150px]"
-                  />
+                  <div className="flex items-center gap-2">
+                    <Slider
+                      value={raiseTo}
+                      min={la.minRaiseTo}
+                      max={la.maxRaiseTo}
+                      step={Math.max(1, bb / 2)}
+                      onValueChange={(v) => {
+                        setRaiseTo(v);
+                        setBetText(null);
+                      }}
+                      ariaLabel="Bet size"
+                      className="w-[110px]"
+                    />
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      aria-label="Bet size in big blinds"
+                      value={betText ?? String(Math.round((raiseTo / bb) * 10) / 10)}
+                      onChange={(e) => setBetText(e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      onBlur={commitBetText}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitBetText();
+                          (e.target as HTMLInputElement).blur();
+                        }
+                      }}
+                      className="mono w-[46px] rounded-md border border-[var(--line)] bg-ink-700 px-1.5 py-0.5 text-right text-[0.74rem] font-semibold text-[var(--text)] focus:border-gold/60 focus:outline-none"
+                    />
+                    <span className="text-[0.66rem] text-faint">bb</span>
+                  </div>
                 </div>
                 <Button
                   size="lg"

@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import { useDrills } from "@/store/drillStore";
 import { fmtPct, fmtSigned } from "@/lib/format";
 import { cx } from "@/lib/cx";
 import { Button } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
+import { isTypingTarget, hasModifier } from "@/lib/hotkeys";
 
 export function DrillControls() {
   const puzzle = useDrills((s) => s.puzzle);
@@ -11,6 +13,25 @@ export function DrillControls() {
   const ratingDelta = useDrills((s) => s.ratingDelta);
   const answer = useDrills((s) => s.answer);
   const next = useDrills((s) => s.next);
+
+  // Keyboard: 1/2/3 answers, Enter advances to the next puzzle.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e) || hasModifier(e)) return;
+      if (!answered) {
+        const idx = ["1", "2", "3"].indexOf(e.key);
+        if (idx >= 0 && idx < puzzle.options.length) {
+          e.preventDefault();
+          answer(puzzle.options[idx].action);
+        }
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        next();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [answered, puzzle, answer, next]);
 
   const sourceLabel =
     puzzle.kind === "leak"
@@ -33,7 +54,7 @@ export function DrillControls() {
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        {puzzle.options.map((o) => {
+        {puzzle.options.map((o, i) => {
           const accepted = result?.accept.includes(o.action);
           const chosenWrong = answered === o.action && !accepted;
           return (
@@ -42,13 +63,18 @@ export function DrillControls() {
               disabled={!!answered}
               onClick={() => answer(o.action)}
               className={cx(
-                "rounded-xl border px-2 py-3 text-sm font-semibold transition disabled:cursor-default",
+                "relative rounded-xl border px-2 py-3 text-sm font-semibold transition disabled:cursor-default",
                 !answered && "border-[var(--line)] bg-ink-700 text-[var(--text)] hover:bg-ink-600",
                 answered && accepted && "border-good bg-good/15 text-[var(--text)]",
                 answered && chosenWrong && "border-bad bg-bad/15 text-[var(--text)]",
                 answered && !accepted && !chosenWrong && "border-[var(--line)] bg-ink-800 text-faint",
               )}
             >
+              {i < 3 && (
+                <kbd className="absolute left-1.5 top-1.5 rounded border border-[var(--line)] bg-black/20 px-1 text-[0.6rem] mono text-faint">
+                  {i + 1}
+                </kbd>
+              )}
               {o.label}
             </button>
           );
