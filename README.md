@@ -1,7 +1,7 @@
 # All-In · Poker Dojo
 
 A clean, offline-first Texas Hold'em **trainer** for desktop and web. Learn from the rules up to
-solid, EV-aware play by actually doing the math with you — a sandbox vs. bots, chess-style GTO drills,
+solid, EV-aware play by actually doing the math with you — a sandbox vs. bots, chess-style drills graded by real charts and computed Nash tables,
 an interactive course, an inline Expected-Value coach, and leak tracking.
 
 **▶ Play online:** https://gapp.in/poker  ·  **⤓ Download desktop:**

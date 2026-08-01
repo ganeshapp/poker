@@ -164,10 +164,10 @@ export function AboutView() {
           </p>
           <ul className="space-y-1.5 text-[0.84rem] text-muted">
             {[
+              "Configurable table — stack depths, 9-max, antes",
               "Desktop auto-update — one-click new versions",
-              "Configurable table — 6/9-max, antes",
-              "Daily goals, streaks & achievements",
-              "Install as an app (PWA) on the web",
+              "Import your real online hand histories for coaching",
+              "ICM & tournament drills",
             ].map((x) => (
               <li key={x} className="flex gap-2">
                 <Icon name="arrow-right" size={14} className="mt-0.5 shrink-0 text-gold" />
