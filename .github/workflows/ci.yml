@@ -31,6 +31,7 @@ jobs:
           node --experimental-transform-types scripts/leaks_test.ts
           node --experimental-transform-types scripts/puzzles_test.ts
           node --experimental-transform-types scripts/pushfold_test.ts
+          node --experimental-transform-types scripts/preflop_test.ts
 
       - name: Golden files (evaluator scores + bundled charts)
         run: node --experimental-transform-types scripts/golden_test.ts

@@ -4,11 +4,11 @@ import {
   generatePushFold,
   puzzleFromLeak,
   gradePuzzle,
-  RFI_PCT,
   type DrillAction,
   type LeakSpot,
 } from "../src/engine/puzzles.ts";
-import { topPercentRange } from "../src/engine/ranges.ts";
+import { chartWidth } from "../src/engine/ranges.ts";
+import { PREFLOP_100 } from "../src/data/preflop.ts";
 
 let passed = 0;
 let failed = 0;
@@ -22,9 +22,9 @@ function ok(cond: boolean, msg: string) {
 }
 
 // Chart sanity (the membership the grader relies on)
-ok(topPercentRange(RFI_PCT.UTG).has("AA"), "AA in UTG RFI");
-ok(!topPercentRange(RFI_PCT.UTG).has("72o"), "72o not in UTG RFI");
-ok(topPercentRange(RFI_PCT.BTN).size > topPercentRange(RFI_PCT.UTG).size, "BTN opens wider than UTG");
+ok((PREFLOP_100.rfi.UTG["AA"] ?? 0) === 1, "AA in UTG RFI");
+ok((PREFLOP_100.rfi.UTG["72o"] ?? 0) === 0, "72o not in UTG RFI");
+ok(chartWidth(PREFLOP_100.rfi.BTN) > chartWidth(PREFLOP_100.rfi.UTG), "BTN opens wider than UTG");
 
 const ALL: DrillAction[] = ["fold", "check", "call", "bet", "raise"];
 const kinds = new Set<string>();

@@ -1,9 +1,10 @@
 import type { Card, Position, Street, HandLabel } from "../types/poker.ts";
 import { makeDeck, shuffle, cardToInt } from "./cards.ts";
 import { cardsToLabel, labelToCombos } from "./notation.ts";
-import { topPercentRange } from "./ranges.ts";
+import { topPercentRange, chartWidth } from "./ranges.ts";
 import { equityVsRange, comboToInts, hashSeed } from "./equity.ts";
 import { NASH_SHOVE, NASH_CALL, type PushFoldPos } from "../data/pushfold.ts";
+import { PREFLOP_100 } from "../data/preflop.ts";
 
 /* ==================================================================
    Drills — procedural puzzle generator + heuristic grader.
@@ -65,9 +66,7 @@ const ORDER: Position[] = ["UTG", "MP", "CO", "BTN", "SB", "BB"];
 const SB = 0.5;
 const BBV = 1;
 
-export const RFI_PCT: Record<Position, number> = { UTG: 16, MP: 20, CO: 27, BTN: 45, SB: 42, BB: 100 };
-export const THREEBET_PCT: Record<Position, number> = { UTG: 6, MP: 7, CO: 8, BTN: 10, SB: 9, BB: 11 };
-export const DEFEND_PCT: Record<Position, number> = { UTG: 12, MP: 15, CO: 20, BTN: 32, SB: 22, BB: 52 };
+const pctOf = (chart: Record<string, number>) => Math.round(chartWidth(chart) * 100);
 
 let SEQ = 1;
 const rint = (a: number, b: number) => a + Math.floor(Math.random() * (b - a + 1));
@@ -119,8 +118,11 @@ function genRfi(): Puzzle {
   for (const p of foldedBefore) frames.push({ text: `${p} folds.`, street: "preflop", board: [], pot });
   frames.push({ text: `Folded to you in the ${heroPos}. Action on you.`, street: "preflop", board: [], pot });
 
-  const inRange = topPercentRange(RFI_PCT[heroPos]).has(label);
-  const best: DrillAction = inRange ? "raise" : "fold";
+  const chart = PREFLOP_100.rfi[heroPos] ?? {};
+  const freq = chart[label] ?? 0;
+  const mixed = freq > 0.2 && freq < 0.8;
+  const best: DrillAction = freq >= 0.5 ? "raise" : "fold";
+  const accept: DrillAction[] = mixed ? ["fold", "raise"] : [best];
   const openTo = r1(2.5 * BBV);
 
   return {
@@ -143,11 +145,13 @@ function genRfi(): Puzzle {
       { action: "raise", label: `Open ${openTo}`, amount: openTo },
     ],
     best,
-    accept: [best],
-    rationale: inRange
-      ? `${heroPos} opens about the top ${RFI_PCT[heroPos]}% of hands. ${label} is in that range, so the chart play is to raise (limping isn't part of a solid opening strategy).`
-      : `${heroPos} opens about the top ${RFI_PCT[heroPos]}% of hands. ${label} is below that, so fold — limping/calling here is −EV.`,
-    difficulty: 1,
+    accept,
+    rationale: mixed
+      ? `${heroPos} opens about ${pctOf(chart)}% of hands here, and ${label} is a true mixed hand — the chart opens it ${Math.round(freq * 100)}% of the time, so raising and folding are both fine (limping still isn't).`
+      : freq >= 0.5
+        ? `${heroPos} opens about ${pctOf(chart)}% of hands. ${label} is in that range, so the chart play is to raise (limping isn't part of a solid opening strategy).`
+        : `${heroPos} opens about ${pctOf(chart)}% of hands. ${label} isn't in that range, so fold — limping/calling here is −EV.`,
+    difficulty: mixed ? 3 : 1,
   };
 }
 
@@ -177,19 +181,35 @@ function genVsRaise(): Puzzle {
     frames.push({ text: `${fp} folds.`, street: "preflop", board: [], pot: p });
   frames.push({ text: `Action on you in the ${heroPos}, facing a raise.`, street: "preflop", board: [], pot: p });
 
-  const in3bet = topPercentRange(THREEBET_PCT[heroPos]).has(label);
-  const inDefend = topPercentRange(DEFEND_PCT[heroPos]).has(label);
-  let best: DrillAction;
+  // Charts are keyed by hero AND raiser position — a BTN open gets
+  // defended very differently from an UTG open.
+  const charts = PREFLOP_100.vsRfi[`${heroPos}_vs_${raiserPos}`] ?? { threebet: {}, call: {} };
+  const f3 = charts.threebet[label] ?? 0;
+  const fc = charts.call[label] ?? 0;
+  const ff = Math.max(0, 1 - f3 - fc);
+  const freqs: [DrillAction, number][] = [
+    ["raise", f3],
+    ["call", fc],
+    ["fold", ff],
+  ];
+  freqs.sort((a, b) => b[1] - a[1]);
+  const best: DrillAction = freqs[0][0];
+  const accept: DrillAction[] = freqs.filter(([, f]) => f >= 0.25).map(([a]) => a);
+  if (!accept.includes(best)) accept.unshift(best);
+  const mixed = accept.length > 1;
+  const actName = (a: DrillAction) => (a === "raise" ? "3-bet" : a);
   let rationale: string;
-  if (in3bet) {
-    best = "raise";
-    rationale = `From the ${heroPos} vs a ${raiserPos} open, ${label} is in your 3-bet range (top ~${THREEBET_PCT[heroPos]}%). Re-raise for value/pressure.`;
-  } else if (inDefend) {
-    best = "call";
-    rationale = `${label} is too weak to 3-bet but inside your ${heroPos} defending range (~${DEFEND_PCT[heroPos]}%), so call and see a flop.`;
+  if (mixed) {
+    rationale = `Facing a ${raiserPos} open from the ${heroPos}, ${label} is a genuine mix: the chart ${freqs
+      .filter(([, f]) => f >= 0.25)
+      .map(([a, f]) => `${actName(a)}s ${Math.round(f * 100)}%`)
+      .join(" / ")} of the time. Any of those is fine.`;
+  } else if (best === "raise") {
+    rationale = `Facing a ${raiserPos} open, ${label} is in the ${heroPos} 3-bet range (~${pctOf(charts.threebet)}% of hands) — re-raise for value/pressure.`;
+  } else if (best === "call") {
+    rationale = `Facing a ${raiserPos} open, ${label} is too weak to 3-bet but inside the ${heroPos} calling range (~${pctOf(charts.call)}%), so call and see a flop.`;
   } else {
-    best = "fold";
-    rationale = `${label} is outside the ${heroPos} defending range vs a ${raiserPos} raise — fold.`;
+    rationale = `${label} is outside the ${heroPos} continuing range vs a ${raiserPos} open (~${pctOf(charts.threebet) + pctOf(charts.call)}% continues) — fold.`;
   }
   const threeBetTo = r1(raiseTo * (heroPos === "BB" || heroPos === "SB" ? 3.5 : 3));
 
@@ -213,9 +233,9 @@ function genVsRaise(): Puzzle {
       { action: "raise", label: `3-bet ${threeBetTo}`, amount: threeBetTo },
     ],
     best,
-    accept: [best],
+    accept,
     rationale,
-    difficulty: 2,
+    difficulty: mixed ? 3 : 2,
   };
 }
 

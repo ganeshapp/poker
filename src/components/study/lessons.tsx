@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import type { HandLabel } from "@/types/poker";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { RangeMatrix, RangeLegend } from "@/components/range/RangeMatrix";
-import { topPercentRange } from "@/engine/ranges";
+import { topPercentRange, chartToSet } from "@/engine/ranges";
+import { PREFLOP_100 } from "@/data/preflop";
 import { ARCHETYPES } from "@/game/archetypes";
 import { HandRankings } from "./HandRankings";
 import { PotOddsCalculator } from "./PotOddsCalculator";
@@ -204,8 +205,8 @@ export const LEVELS: Level[] = [
           <>
             <Lead>How wide you open should grow as you get closer to the button.</Lead>
             <div className="grid gap-4 lg:grid-cols-2">
-              <Diagram range={topPercentRange(14)} title="UTG open · ~14%" />
-              <Diagram range={topPercentRange(45)} title="Button open · ~45%" />
+              <Diagram range={chartToSet(PREFLOP_100.rfi.UTG)} title="UTG open · ~15%" />
+              <Diagram range={chartToSet(PREFLOP_100.rfi.BTN)} title="Button open · ~45%" />
             </div>
             <Callout>
               From UTG you're under the gun with five players still to act — only premium hands profit.
@@ -225,9 +226,9 @@ export const LEVELS: Level[] = [
               dead money with the right bluffs.
             </Lead>
             <Diagram
-              range={topPercentRange(8)}
-              title="A linear value 3-bet range · ~8%"
-              note="Against a wider opener, add suited bluffs (e.g. A5s, KTs) for balance."
+              range={chartToSet(PREFLOP_100.vsRfi.BTN_vs_CO.threebet, 0.4)}
+              title="BTN 3-bet vs a CO open · ~5%"
+              note="Big pairs and AK for value, plus small suited aces as bluffs — they block AA/AK and make the nut flush."
             />
             <P>
               Against a tight opener (a Nit), 3-bet only your premiums — they fold everything else and

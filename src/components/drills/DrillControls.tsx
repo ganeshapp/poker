@@ -39,7 +39,7 @@ export function DrillControls() {
       : puzzle.kind === "pushfold"
         ? "Push/Fold · computed Nash"
         : puzzle.source === "chart"
-          ? "Pre-flop chart · heuristic"
+          ? "Pre-flop chart · 100bb baseline"
           : "Post-flop heuristic · fundamentals";
 
   return (
