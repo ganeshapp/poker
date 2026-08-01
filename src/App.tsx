@@ -1,6 +1,8 @@
 import { Logo } from "@/components/Logo";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { useNav, type Tab } from "@/store/navStore";
+import { useSettings } from "@/store/settingsStore";
+import { SettingsView } from "@/views/SettingsView";
 import { PlayView } from "@/views/PlayView";
 import { DrillsView } from "@/views/DrillsView";
 import { StudyView } from "@/views/StudyView";
@@ -15,6 +17,7 @@ const NAV: { id: Tab; label: string; icon: IconName }[] = [
   { id: "drills", label: "Drills", icon: "target" },
   { id: "study", label: "Study", icon: "book" },
   { id: "stats", label: "Stats", icon: "stats" },
+  { id: "settings", label: "Settings", icon: "target" },
   { id: "about", label: "About", icon: "info" },
 ];
 
@@ -23,9 +26,11 @@ export default function App() {
   const setTab = useNav((s) => s.go);
   const theme = useTheme((s) => s.theme);
   const toggleTheme = useTheme((s) => s.toggle);
+  const fourColor = useSettings((s) => s.fourColorDeck);
+  const reducedMotion = useSettings((s) => s.reducedMotion);
 
   return (
-    <div className="app-backdrop flex h-screen w-screen overflow-hidden">
+    <div className={cx("app-backdrop flex h-screen w-screen overflow-hidden", fourColor && "four-color", reducedMotion && "reduce-motion")}>
       <nav className="flex w-[212px] shrink-0 flex-col border-r border-[var(--line)] bg-ink-900/70 p-4">
         <div className="px-1 pb-6">
           <Logo size={40} withWordmark />
@@ -76,6 +81,7 @@ export default function App() {
         {tab === "drills" && <DrillsView />}
         {tab === "study" && <StudyView />}
         {tab === "stats" && <StatsView />}
+        {tab === "settings" && <SettingsView />}
         {tab === "about" && <AboutView />}
       </main>
 

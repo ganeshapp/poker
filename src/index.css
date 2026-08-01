@@ -56,3 +56,30 @@
     border: 1px solid var(--line);
   }
 }
+
+/* Per-suit colors: default two-color deck mirrors the classic vars;
+   .four-color overrides diamonds/clubs for accessibility. */
+:root {
+  --suit-h: var(--suit-red);
+  --suit-d: var(--suit-red);
+  --suit-s: var(--suit-black);
+  --suit-c: var(--suit-black);
+}
+.four-color {
+  --suit-d: #2f7fd6;
+  --suit-c: #2fa066;
+}
+
+/* Reduced motion: user setting or OS preference. */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
