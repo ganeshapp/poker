@@ -108,10 +108,18 @@ node --experimental-transform-types scripts/multiway_test.ts   # multiway equity
 node --experimental-transform-types scripts/hh_test.ts         # hand-history formatter
 node --experimental-transform-types scripts/leaks_test.ts      # leak detection
 node --experimental-transform-types scripts/puzzles_test.ts    # drill generation + grading
+node --experimental-transform-types scripts/golden_test.ts     # pinned evaluator scores + chart snapshots
 
 # Rust engine:
 cargo test --manifest-path poker-core/Cargo.toml
+
+# TS <-> Rust parity (identical scores + identical exact-equity counts):
+node --experimental-transform-types scripts/parity_test.ts
 ```
+
+All of the above runs in CI on every PR (`.github/workflows/ci.yml`). If you change
+evaluator scoring or a bundled chart *deliberately*, regenerate the pins with
+`scripts/golden_gen.ts` and commit the diff.
 
 ## Tech stack
 
