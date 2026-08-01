@@ -1,9 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useDrills } from "@/store/drillStore";
-import { fmtPct, fmtSigned } from "@/lib/format";
+import { useNav } from "@/store/navStore";
+import { fmtPct, fmtSigned, fmtTimes, fmtNeed } from "@/lib/format";
 import { cx } from "@/lib/cx";
 import { Button } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
+import { RangeMatrix } from "@/components/range/RangeMatrix";
 import { isTypingTarget, hasModifier } from "@/lib/hotkeys";
 
 export function DrillControls() {
@@ -13,6 +15,12 @@ export function DrillControls() {
   const ratingDelta = useDrills((s) => s.ratingDelta);
   const answer = useDrills((s) => s.answer);
   const next = useDrills((s) => s.next);
+  const mode = useDrills((s) => s.mode);
+  const drillSimilar = useDrills((s) => s.drillSimilar);
+  const focusLeft = useDrills((s) => s.focusLeft);
+  const goStudy = useNav((s) => s.go);
+  const [showRange, setShowRange] = useState(false);
+  useEffect(() => setShowRange(false), [puzzle.id]);
 
   // Keyboard: 1/2/3 answers, Enter advances to the next puzzle.
   useEffect(() => {
@@ -105,10 +113,68 @@ export function DrillControls() {
 
           <p className="mt-2 text-[0.84rem] leading-relaxed text-muted">{result.rationale}</p>
 
+          {/* Per-option outcomes in beginner terms (postflop math spots) */}
+          {puzzle.equity !== undefined && puzzle.potOdds !== undefined && puzzle.toCall > 0 && (
+            <div className="mt-2 space-y-1 rounded-lg bg-ink-850 px-3 py-2 text-[0.76rem] text-muted">
+              <div>
+                <span className="font-semibold text-[var(--text)]">Folding:</span> 0 bb — costs nothing
+                more.
+              </div>
+              <div>
+                <span className="font-semibold text-[var(--text)]">Calling:</span>{" "}
+                <span className="mono">
+                  {fmtSigned(puzzle.equity * (puzzle.pot + puzzle.toCall) - puzzle.toCall)} bb
+                </span>{" "}
+                per try — your hand wins {fmtTimes(puzzle.equity)} and you need {fmtNeed(puzzle.potOdds)}.
+              </div>
+            </div>
+          )}
           {(puzzle.equity !== undefined || puzzle.potOdds !== undefined) && (
             <div className="mt-2 flex gap-4 text-[0.74rem] text-faint">
               {puzzle.equity !== undefined && <span>Equity: {fmtPct(puzzle.equity)}</span>}
               {puzzle.potOdds !== undefined && <span>Pot odds: {fmtPct(puzzle.potOdds)}</span>}
+            </div>
+          )}
+
+          {/* The range this spot was graded against */}
+          {puzzle.gradeRange && puzzle.gradeRange.length > 0 && (
+            <div className="mt-3">
+              <button
+                onClick={() => setShowRange((v) => !v)}
+                className="flex items-center gap-1 text-[0.72rem] font-semibold text-gold hover:text-gold-light"
+              >
+                <Icon name="chevron-right" size={13} className={showRange ? "rotate-90 transition" : "transition"} />
+                {showRange ? "Hide the range" : `See the range it was graded against`}
+              </button>
+              {showRange && (
+                <div className="mt-2 flex flex-col items-center gap-1">
+                  <RangeMatrix highlight={new Set(puzzle.gradeRange)} readOnly size={260} />
+                  <div className="text-[0.7rem] text-faint">{puzzle.gradeRangeTitle}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-3 flex gap-2">
+            {puzzle.lessonId && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="flex-1"
+                onClick={() => goStudy("study", puzzle.lessonId)}
+              >
+                <Icon name="book" size={14} /> {puzzle.lessonTitle ?? "Read the lesson"}
+              </Button>
+            )}
+            {mode !== "leaks" && puzzle.kind !== "leak" && (
+              <Button variant="secondary" size="sm" className="flex-1" onClick={drillSimilar}>
+                <Icon name="target" size={14} /> Drill 5 similar
+              </Button>
+            )}
+          </div>
+          {focusLeft > 0 && (
+            <div className="mt-1 text-center text-[0.68rem] text-faint">
+              {focusLeft} more of this spot type coming up
             </div>
           )}
 

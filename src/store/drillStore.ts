@@ -9,6 +9,7 @@ import {
   type Puzzle,
 } from "@/engine/puzzles";
 import { useLeaks } from "./leakStore";
+import type { PuzzleKind } from "@/engine/puzzles";
 
 export type DrillMode = "mixed" | "pushfold" | "leaks";
 
@@ -40,13 +41,20 @@ function save(p: Persisted) {
   }
 }
 
-function genFor(mode: DrillMode): { puzzle: Puzzle | null; leakId: string | null } {
+function genFor(mode: DrillMode, focusKind: PuzzleKind | null = null): { puzzle: Puzzle | null; leakId: string | null } {
   if (mode === "pushfold") return { puzzle: generatePushFold(), leakId: null };
   if (mode === "leaks") {
     const spots = useLeaks.getState().spots;
     if (!spots.length) return { puzzle: null, leakId: null };
     const s = spots[(Math.random() * spots.length) | 0];
     return { puzzle: puzzleFromLeak(s), leakId: s.id };
+  }
+  if (focusKind) {
+    // "Drill similar": keep dealing until the same spot family shows up.
+    for (let i = 0; i < 60; i++) {
+      const p = generatePuzzle();
+      if (p.kind === focusKind) return { puzzle: p, leakId: null };
+    }
   }
   return { puzzle: generatePuzzle(), leakId: null };
 }
@@ -59,8 +67,12 @@ interface DrillState extends Persisted {
   answered: DrillAction | null;
   result: GradeResult | null;
   ratingDelta: number;
+  /** "Drill 5 similar" state: spot family + remaining count. */
+  focusKind: PuzzleKind | null;
+  focusLeft: number;
   answer: (a: DrillAction) => void;
   next: () => void;
+  drillSimilar: () => void;
   setMode: (m: DrillMode) => void;
   setNav: (i: number) => void;
 }
@@ -77,6 +89,8 @@ export const useDrills = create<DrillState>((set, get) => {
     answered: null,
     result: null,
     ratingDelta: 0,
+    focusKind: null,
+    focusLeft: 0,
 
     answer: (a) => {
       const s = get();
@@ -112,11 +126,14 @@ export const useDrills = create<DrillState>((set, get) => {
     },
 
     next: () => {
-      const { puzzle, leakId } = genFor(get().mode);
+      const st = get();
+      const focus = st.focusLeft > 0 ? st.focusKind : null;
+      const { puzzle, leakId } = genFor(st.mode, focus);
       if (!puzzle) {
         set({ answered: null, result: null, ratingDelta: 0, currentLeakId: null });
         return;
       }
+      const focusLeft = focus ? st.focusLeft - 1 : 0;
       set({
         puzzle,
         currentLeakId: leakId,
@@ -124,7 +141,16 @@ export const useDrills = create<DrillState>((set, get) => {
         answered: null,
         result: null,
         ratingDelta: 0,
+        focusLeft,
+        focusKind: focusLeft > 0 ? st.focusKind : null,
       });
+    },
+
+    drillSimilar: () => {
+      const st = get();
+      if (st.mode === "leaks" || st.puzzle.kind === "leak") return;
+      set({ focusKind: st.puzzle.kind, focusLeft: 5 });
+      get().next();
     },
 
     setMode: (m) => {

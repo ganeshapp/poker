@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStudy } from "@/store/studyStore";
+import { useNav } from "@/store/navStore";
 import { LEVELS, ALL_LESSON_IDS } from "@/components/study/lessons";
 import { Icon } from "@/components/ui/Icon";
 import { Button, ProgressBar } from "@/components/ui/controls";
@@ -9,6 +10,16 @@ export function StudyView() {
   const completed = useStudy((s) => s.completed);
   const complete = useStudy((s) => s.complete);
   const [activeId, setActiveId] = useState(LEVELS[0].lessons[0].id);
+
+  // Deep links from other tabs (e.g. drill feedback -> lesson).
+  const requestedLesson = useNav((s) => s.lessonId);
+  const consumeLesson = useNav((s) => s.consumeLesson);
+  useEffect(() => {
+    if (requestedLesson && ALL_LESSON_IDS.includes(requestedLesson)) {
+      setActiveId(requestedLesson);
+      consumeLesson();
+    }
+  }, [requestedLesson, consumeLesson]);
 
   const { lesson, level } = useMemo(() => {
     for (const lv of LEVELS) {
