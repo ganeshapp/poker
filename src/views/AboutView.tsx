@@ -2,6 +2,7 @@ import { Logo } from "@/components/Logo";
 import { Card } from "@/components/ui/controls";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { openExternal } from "@/lib/openExternal";
+import { useEffect, useState } from "react";
 
 const SITE_URL = "https://gapp.in/poker";
 const RELEASES_URL = "https://github.com/ganeshapp/poker/releases/latest";
@@ -29,6 +30,47 @@ const MODES: { icon: IconName; title: string; body: string }[] = [
   },
 ];
 
+/** Passive update check: compares the latest GitHub release tag with
+    this build. No auto-update, no signing — just a link. Fails silently
+    offline, which an offline-first app must. */
+function UpdateNotice() {
+  const [latest, setLatest] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch("https://api.github.com/repos/ganeshapp/poker/releases/latest")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { tag_name?: string } | null) => {
+        if (!live || !j?.tag_name) return;
+        const tag = j.tag_name.replace(/^v/, "");
+        const newer = (a: string, b: string) => {
+          const pa = a.split(".").map(Number);
+          const pb = b.split(".").map(Number);
+          for (let i = 0; i < 3; i++) {
+            if ((pa[i] ?? 0) > (pb[i] ?? 0)) return true;
+            if ((pa[i] ?? 0) < (pb[i] ?? 0)) return false;
+          }
+          return false;
+        };
+        if (newer(tag, __APP_VERSION__)) setLatest(tag);
+      })
+      .catch(() => {
+        /* offline — say nothing */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!latest) return null;
+  return (
+    <button
+      onClick={() => void openExternal(RELEASES_URL)}
+      className="mt-1 flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 px-3 py-1 text-[0.72rem] font-semibold text-gold transition hover:bg-gold/20"
+    >
+      <Icon name="arrow-right" size={12} /> Version {latest} is out — download it here
+    </button>
+  );
+}
+
 export function AboutView() {
   return (
     <div className="h-full overflow-auto">
@@ -42,8 +84,9 @@ export function AboutView() {
             EV-aware play — by actually doing the math with you, not just showing answers.
           </p>
           <span className="rounded-full bg-white/5 px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-wide text-faint">
-            Version 1.0
+            Version {__APP_VERSION__}
           </span>
+          <UpdateNotice />
         </div>
 
         {/* Play online / download */}
