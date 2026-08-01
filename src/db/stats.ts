@@ -17,6 +17,11 @@ export interface HandRecord {
   showdown: boolean;
   won: boolean;
   archetypes: Archetype[];
+  /** Hero's position this hand (recorded from schema v2 on). */
+  position?: string | null;
+  /** Full serialized HHHand — makes every hand replayable after a
+      restart. Persisted, but not loaded into the stats snapshot. */
+  handJson?: string;
   ts: number;
 }
 
@@ -37,12 +42,48 @@ export interface StatsSnapshot {
 }
 
 const LS_KEY = "allin.stats.v1";
+const LS_HANDS_KEY = "allin.hands.v1";
 const HISTORY_CAP = 800;
+/** Replayable hands kept in the localStorage fallback (quota-bound;
+    SQLite keeps every hand). */
+const LS_HANDS_CAP = 100;
+const SCHEMA_VERSION = 2;
 
 type Backend = "sqlite" | "local";
 let backend: Backend | null = null;
+let lastError: string | null = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let db: any = null;
+
+/** Which storage backend is live, and the last error that caused a
+    fallback (for the diagnostics surface). */
+export function backendInfo(): { backend: Backend | null; lastError: string | null } {
+  return { backend, lastError };
+}
+
+function noteError(context: string, e: unknown) {
+  lastError = `${context}: ${String(e)}`;
+  console.warn(lastError);
+}
+
+async function migrate() {
+  const rows = (await db.select(`PRAGMA user_version;`)) as { user_version: number }[];
+  const v = rows[0]?.user_version ?? 0;
+  if (v < 2) {
+    // v2: hero position + full replayable hand payloads.
+    const addColumn = async (sql: string) => {
+      try {
+        await db.execute(sql);
+      } catch {
+        /* column already exists (partial earlier migration) */
+      }
+    };
+    await addColumn(`ALTER TABLE hand_history ADD COLUMN position TEXT;`);
+    await addColumn(`ALTER TABLE hand_history ADD COLUMN hand_json TEXT;`);
+    await addColumn(`ALTER TABLE decisions ADD COLUMN position TEXT;`);
+    await db.execute(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+  }
+}
 
 async function ensureBackend(): Promise<Backend> {
   if (backend) return backend;
@@ -80,10 +121,11 @@ async function ensureBackend(): Promise<Backend> {
            ev_bb REAL, street TEXT, archetype TEXT, ts INTEGER
          );`,
       );
+      await migrate();
       backend = "sqlite";
       return backend;
     } catch (e) {
-      console.warn("SQLite unavailable, using localStorage:", e);
+      noteError("SQLite unavailable, using localStorage", e);
     }
   }
   backend = "local";
@@ -118,13 +160,13 @@ export async function loadStats(): Promise<StatsSnapshot> {
       big_blind: number;
     }[];
     const hist = (await db.select(
-      `SELECT n, net_bb, pot_bb, showdown, won, archetypes, ts FROM hand_history ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
+      `SELECT n, net_bb, pot_bb, showdown, won, archetypes, position, ts FROM hand_history ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
     )) as Record<string, unknown>[];
     const guesses = (await db.select(
       `SELECT accuracy, archetype, street, ts FROM range_guess ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
     )) as Record<string, unknown>[];
     const decisions = (await db.select(
-      `SELECT verdict, action, equity, pot_odds, ev_bb, street, archetype, ts FROM decisions ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
+      `SELECT verdict, action, equity, pot_odds, ev_bb, street, archetype, position, ts FROM decisions ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
     )) as Record<string, unknown>[];
     return {
       handsPlayed: us[0]?.hands_played ?? 0,
@@ -139,6 +181,7 @@ export async function loadStats(): Promise<StatsSnapshot> {
           showdown: !!h.showdown,
           won: !!h.won,
           archetypes: JSON.parse((h.archetypes as string) || "[]"),
+          position: (h.position as string) || null,
           ts: Number(h.ts),
         })),
       guesses: guesses
@@ -159,14 +202,51 @@ export async function loadStats(): Promise<StatsSnapshot> {
           evBb: Number(d.ev_bb),
           street: String(d.street),
           villainArchetype: (d.archetype as string) || null,
+          position: (d.position as string) || null,
           ts: Number(d.ts),
         })),
     };
   } catch (e) {
-    console.warn("SQLite read failed, falling back:", e);
+    noteError("SQLite read failed, falling back", e);
     backend = "local";
     return readLocal();
   }
+}
+
+/* ---- Replayable hands (full HHHand payloads) ---- */
+
+function readLocalHands(): string[] {
+  try {
+    const raw = localStorage.getItem(LS_HANDS_KEY);
+    if (raw) return JSON.parse(raw) as string[];
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+/** Most-recent-first serialized hands for the replayer. */
+export async function loadRecentHands(limit = 50): Promise<string[]> {
+  const b = await ensureBackend();
+  if (b === "sqlite") {
+    try {
+      const rows = (await db.select(
+        `SELECT hand_json FROM hand_history WHERE hand_json IS NOT NULL ORDER BY id DESC LIMIT ${limit};`,
+      )) as { hand_json: string }[];
+      return rows.map((r) => r.hand_json);
+    } catch (e) {
+      noteError("SQLite hand read failed", e);
+    }
+  }
+  return readLocalHands().slice(0, limit);
+}
+
+/** Everything, as a JSON string — the pre-reset backup. */
+export async function exportBackup(): Promise<string> {
+  const b = await ensureBackend();
+  const snapshot = await loadStats();
+  const hands = await loadRecentHands(b === "sqlite" ? 100000 : LS_HANDS_CAP);
+  return JSON.stringify({ exportedAt: Date.now(), backend: b, snapshot, hands }, null, 0);
 }
 
 export async function persistHand(rec: HandRecord, netChipsDelta: number): Promise<void> {
@@ -174,8 +254,18 @@ export async function persistHand(rec: HandRecord, netChipsDelta: number): Promi
   if (b === "sqlite") {
     try {
       await db.execute(
-        `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, ts) VALUES (?, ?, ?, ?, ?, ?, ?);`,
-        [rec.n, rec.netBb, rec.potBb, rec.showdown ? 1 : 0, rec.won ? 1 : 0, JSON.stringify(rec.archetypes), rec.ts],
+        `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, position, hand_json, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [
+          rec.n,
+          rec.netBb,
+          rec.potBb,
+          rec.showdown ? 1 : 0,
+          rec.won ? 1 : 0,
+          JSON.stringify(rec.archetypes),
+          rec.position ?? null,
+          rec.handJson ?? null,
+          rec.ts,
+        ],
       );
       await db.execute(
         `UPDATE user_stats SET hands_played = hands_played + 1, net_chips = net_chips + ? WHERE id = 1;`,
@@ -183,16 +273,26 @@ export async function persistHand(rec: HandRecord, netChipsDelta: number): Promi
       );
       return;
     } catch (e) {
-      console.warn("SQLite write failed, falling back:", e);
+      noteError("SQLite write failed, falling back", e);
       backend = "local";
     }
   }
   const s = readLocal();
   s.handsPlayed += 1;
   s.netChips += Math.round(netChipsDelta);
-  s.history.push(rec);
+  const { handJson, ...slim } = rec;
+  s.history.push(slim);
   if (s.history.length > HISTORY_CAP) s.history.splice(0, s.history.length - HISTORY_CAP);
   writeLocal(s);
+  if (handJson) {
+    try {
+      const hands = readLocalHands();
+      hands.unshift(handJson);
+      localStorage.setItem(LS_HANDS_KEY, JSON.stringify(hands.slice(0, LS_HANDS_CAP)));
+    } catch {
+      /* quota — drop oldest hands silently */
+    }
+  }
 }
 
 export async function persistGuess(rec: GuessRecord): Promise<void> {
@@ -207,7 +307,7 @@ export async function persistGuess(rec: GuessRecord): Promise<void> {
       ]);
       return;
     } catch (e) {
-      console.warn("SQLite write failed, falling back:", e);
+      noteError("SQLite write failed, falling back", e);
       backend = "local";
     }
   }
@@ -222,12 +322,12 @@ export async function persistDecision(rec: DecisionRecord): Promise<void> {
   if (b === "sqlite") {
     try {
       await db.execute(
-        `INSERT INTO decisions (verdict, action, equity, pot_odds, ev_bb, street, archetype, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-        [rec.verdict, rec.action, rec.equity, rec.potOdds, rec.evBb, rec.street, rec.villainArchetype, rec.ts],
+        `INSERT INTO decisions (verdict, action, equity, pot_odds, ev_bb, street, archetype, position, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [rec.verdict, rec.action, rec.equity, rec.potOdds, rec.evBb, rec.street, rec.villainArchetype, rec.position ?? null, rec.ts],
       );
       return;
     } catch (e) {
-      console.warn("SQLite write failed, falling back:", e);
+      noteError("SQLite write failed, falling back", e);
       backend = "local";
     }
   }
@@ -251,4 +351,9 @@ export async function resetStats(): Promise<void> {
     }
   }
   writeLocal({ handsPlayed: 0, netChips: 0, bigBlind: 20, history: [], guesses: [], decisions: [] });
+  try {
+    localStorage.removeItem(LS_HANDS_KEY);
+  } catch {
+    /* ignore */
+  }
 }

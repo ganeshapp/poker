@@ -352,6 +352,7 @@ export const useGame = create<GameStore>((set, get) => {
   };
 
   const finalizeHand = (nt: GameState) => {
+    let handJson: string | undefined;
     if (currentHH) {
       currentHH.board = [...nt.board];
       currentHH.potResults = nt.summary?.potResults ?? [];
@@ -359,6 +360,7 @@ export const useGame = create<GameStore>((set, get) => {
       for (const p of nt.players) currentHH.holes[p.id] = p.hole ?? undefined;
       const hh = currentHH;
       currentHH = null;
+      handJson = JSON.stringify(hh);
       set((s) => ({
         session: {
           ...s.session,
@@ -384,6 +386,8 @@ export const useGame = create<GameStore>((set, get) => {
           showdown: nt.summary.showdown.length > 0,
           won,
           archetypes,
+          position: nt.players[0].position,
+          handJson,
           ts: Date.now(),
         },
         heroNet,
@@ -546,6 +550,7 @@ export const useGame = create<GameStore>((set, get) => {
             evBb: (review.evChips ?? 0) / t.bigBlind,
             street: t.street,
             villainArchetype: review.villainArchetype ?? null,
+            position: t.players[0].position,
             ts: Date.now(),
           });
 

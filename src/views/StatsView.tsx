@@ -1,9 +1,15 @@
+import { useEffect, useState } from "react";
 import { useStats } from "@/store/statsStore";
 import { ARCHETYPES } from "@/game/archetypes";
 import { LineChart, MiniBars } from "@/components/stats/charts";
 import { Button, Card, ProgressBar } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { Modal } from "@/components/ui/Dialog";
+import { HandReplayModal } from "@/components/play/HandReplayModal";
+import { loadRecentHands, exportBackup } from "@/db/stats";
+import { saveText } from "@/lib/exportFile";
+import type { HHHand } from "@/game/handHistory";
 import { fmtSigned, fmtPct } from "@/lib/format";
 import { leaksFromDecisions } from "@/lib/leaks";
 import { cx } from "@/lib/cx";
@@ -16,20 +22,45 @@ export function StatsView() {
   const guesses = useStats((s) => s.guesses);
   const decisions = useStats((s) => s.decisions);
   const clear = useStats((s) => s.clear);
+  const chartBase = useStats((s) => s.chartBase);
+
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetText, setResetText] = useState("");
+  const [backupMsg, setBackupMsg] = useState<string | null>(null);
+  const [recent, setRecent] = useState<HHHand[]>([]);
+  const [replay, setReplay] = useState<HHHand | null>(null);
+
+  useEffect(() => {
+    void loadRecentHands(30).then((rows) => {
+      const parsed: HHHand[] = [];
+      for (const r of rows) {
+        try {
+          parsed.push(JSON.parse(r) as HHHand);
+        } catch {
+          /* skip corrupt rows */
+        }
+      }
+      setRecent(parsed);
+    });
+  }, [handsPlayed]);
 
   const netBb = netChips / bb;
   const bb100 = handsPlayed > 0 ? (netBb / handsPlayed) * 100 : 0;
 
-  let acc = 0;
+  // Starts at the pre-window baseline so the line always ends at Net,
+  // however many older hands fell out of the loaded window.
+  let acc = chartBase;
   const cumulative = history.map((h) => (acc += h.netBb));
 
   const sd = history.filter((h) => h.showdown);
   const sdWin = sd.length > 0 ? sd.filter((h) => h.won).length / sd.length : 0;
   const avgAcc = guesses.length > 0 ? guesses.reduce((a, g) => a + g.accuracy, 0) / guesses.length : 0;
 
+  // Multiway hands split their result across the styles faced, so the
+  // per-style nets always sum to the real total (no double counting).
   const archAgg = (["TAG", "LAG", "Nit", "Station"] as const).map((a) => {
     const hs = history.filter((h) => h.archetypes.includes(a));
-    return { a, hands: hs.length, net: hs.reduce((s, h) => s + h.netBb, 0) };
+    return { a, hands: hs.length, net: hs.reduce((s, h) => s + h.netBb / Math.max(1, h.archetypes.length), 0) };
   });
   const maxArchHands = Math.max(1, ...archAgg.map((x) => x.hands));
 
@@ -47,7 +78,7 @@ export function StatsView() {
             <h1 className="font-display text-3xl font-extrabold">Your progress</h1>
             <p className="text-sm text-muted">Decisions, not results — but we track both.</p>
           </div>
-          <Button variant="ghost" onClick={() => clear()}>
+          <Button variant="ghost" onClick={() => { setResetText(""); setBackupMsg(null); setResetOpen(true); }}>
             <Icon name="refresh" size={15} /> Reset
           </Button>
         </div>
@@ -170,7 +201,85 @@ export function StatsView() {
             </div>
           )}
         </Card>
+
+        {/* Recent hands — replayable across restarts (SQLite/local) */}
+        <Card className="mt-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
+            <Icon name="play" size={16} className="text-gold" /> Recent hands
+          </div>
+          {recent.length === 0 ? (
+            <div className="text-sm text-faint">Finished hands appear here and stay replayable after a restart.</div>
+          ) : (
+            <div className="max-h-[260px] space-y-1 overflow-auto pr-1">
+              {recent.map((h, i) => (
+                <button
+                  key={`${h.startedAt}-${i}`}
+                  onClick={() => setReplay(h)}
+                  className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-ink-850 px-3 py-1.5 text-[0.78rem] transition hover:bg-ink-700"
+                >
+                  <span className="text-[var(--text)]">
+                    Hand #{h.id} · {new Date(h.startedAt).toLocaleString()}
+                  </span>
+                  <span className={cx("mono", h.heroNet >= 0 ? "text-good" : "text-bad")}>
+                    {fmtSigned(h.heroNet / h.bb)} bb
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
       </div>
+
+      <HandReplayModal hand={replay} onClose={() => setReplay(null)} />
+
+      {/* Typed-confirmation reset with a backup offer */}
+      <Modal
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        maxWidth={440}
+        title="Reset all progress?"
+        description="This permanently deletes your lifetime stats, decisions, reads, and saved hands."
+      >
+        <div className="space-y-3">
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={async () => {
+              const r = await saveText(`allin-backup-${new Date().toISOString().slice(0, 10)}.json`, await exportBackup());
+              setBackupMsg(r.message);
+            }}
+          >
+            <Icon name="stats" size={15} /> Download a backup first
+          </Button>
+          {backupMsg && <p className="text-[0.74rem] text-faint">{backupMsg}</p>}
+          <div>
+            <label className="mb-1 block text-[0.78rem] text-muted">
+              Type <span className="mono font-bold text-[var(--text)]">RESET</span> to confirm:
+            </label>
+            <input
+              type="text"
+              value={resetText}
+              onChange={(e) => setResetText(e.target.value)}
+              className="w-full rounded-lg border border-[var(--line)] bg-ink-700 px-3 py-2 text-sm text-[var(--text)] focus:border-bad focus:outline-none"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setResetOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={resetText !== "RESET"}
+              onClick={async () => {
+                await clear();
+                setResetOpen(false);
+              }}
+            >
+              Erase everything
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
