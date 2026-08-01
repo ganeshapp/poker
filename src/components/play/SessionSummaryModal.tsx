@@ -3,6 +3,8 @@ import { useGame } from "@/store/gameStore";
 import { useStats } from "@/store/statsStore";
 import { formatSession, type HHHand } from "@/game/handHistory";
 import { HandReplayModal } from "./HandReplayModal";
+import { HandNoteEditor } from "@/components/stats/HandNoteEditor";
+import { useNotes, handKey } from "@/store/noteStore";
 import { saveText, copyText } from "@/lib/exportFile";
 import { fmtSigned } from "@/lib/format";
 import { Modal } from "@/components/ui/Dialog";
@@ -18,6 +20,8 @@ export function SessionSummaryModal() {
   const closeSummary = useGame((s) => s.closeSummary);
   const [msg, setMsg] = useState<string | null>(null);
   const [replay, setReplay] = useState<HHHand | null>(null);
+  const [noteHand, setNoteHand] = useState<HHHand | null>(null);
+  const handNotes = useNotes((s) => s.notes);
 
   if (!sessionEnded) return null;
 
@@ -123,12 +127,22 @@ export function SessionSummaryModal() {
                   >
                     {fmtSigned(h.heroNet / bb)} bb
                   </span>
-                  <button
-                    onClick={() => setReplay(h)}
-                    className="flex items-center gap-1 text-[0.74rem] font-semibold text-gold hover:text-gold-light"
-                  >
-                    <Icon name="play" size={12} /> Replay
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setNoteHand(h)}
+                      title="Add a note / tag"
+                      aria-label="Add note"
+                      className={handNotes[handKey(h.startedAt)] ? "text-gold" : "text-faint hover:text-[var(--text)]"}
+                    >
+                      <Icon name="book" size={13} />
+                    </button>
+                    <button
+                      onClick={() => setReplay(h)}
+                      className="flex items-center gap-1 text-[0.74rem] font-semibold text-gold hover:text-gold-light"
+                    >
+                      <Icon name="play" size={12} /> Replay
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -153,6 +167,7 @@ export function SessionSummaryModal() {
       </div>
       </Modal>
       <HandReplayModal hand={replay} onClose={() => setReplay(null)} />
+      <HandNoteEditor hand={noteHand} onClose={() => setNoteHand(null)} />
     </>
   );
 }

@@ -9,6 +9,8 @@ import { Modal } from "@/components/ui/Dialog";
 import { HandReplayModal } from "@/components/play/HandReplayModal";
 import { loadRecentHands, exportBackup } from "@/db/stats";
 import { useGoals, metGoal } from "@/store/goalStore";
+import { useNotes, handKey } from "@/store/noteStore";
+import { HandNoteEditor } from "@/components/stats/HandNoteEditor";
 import { saveText } from "@/lib/exportFile";
 import type { HHHand } from "@/game/handHistory";
 import { fmtSigned, fmtPct } from "@/lib/format";
@@ -30,6 +32,9 @@ export function StatsView() {
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
   const [recent, setRecent] = useState<HHHand[]>([]);
   const [replay, setReplay] = useState<HHHand | null>(null);
+  const [noteHand, setNoteHand] = useState<HHHand | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const handNotes = useNotes((s) => s.notes);
 
   useEffect(() => {
     void loadRecentHands(30).then((rows) => {
@@ -311,31 +316,92 @@ export function StatsView() {
           </Card>
         </div>
 
-        {/* Recent hands — replayable across restarts (SQLite/local) */}
+        {/* Recent hands — replayable across restarts, with notes & tags */}
         <Card className="mt-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
             <Icon name="play" size={16} className="text-gold" /> Recent hands
           </div>
-          {recent.length === 0 ? (
-            <div className="text-sm text-faint">Finished hands appear here and stay replayable after a restart.</div>
-          ) : (
-            <div className="max-h-[260px] space-y-1 overflow-auto pr-1">
-              {recent.map((h, i) => (
-                <button
-                  key={`${h.startedAt}-${i}`}
-                  onClick={() => setReplay(h)}
-                  className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-ink-850 px-3 py-1.5 text-[0.78rem] transition hover:bg-ink-700"
-                >
-                  <span className="text-[var(--text)]">
-                    Hand #{h.id} · {new Date(h.startedAt).toLocaleString()}
-                  </span>
-                  <span className={cx("mono", h.heroNet >= 0 ? "text-good" : "text-bad")}>
-                    {fmtSigned(h.heroNet / h.bb)} bb
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          {(() => {
+            const allTags = [...new Set(Object.values(handNotes).flatMap((n) => n.tags))];
+            const rows = tagFilter
+              ? recent.filter((h) => handNotes[handKey(h.startedAt)]?.tags.includes(tagFilter))
+              : recent;
+            return (
+              <>
+                {allTags.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    <button
+                      onClick={() => setTagFilter(null)}
+                      className={cx(
+                        "rounded-full px-2.5 py-0.5 text-[0.7rem] font-semibold transition",
+                        tagFilter === null ? "bg-gold text-ink-900" : "bg-ink-700 text-muted hover:text-[var(--text)]",
+                      )}
+                    >
+                      all
+                    </button>
+                    {allTags.map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setTagFilter(tagFilter === t ? null : t)}
+                        className={cx(
+                          "rounded-full px-2.5 py-0.5 text-[0.7rem] font-semibold transition",
+                          tagFilter === t ? "bg-gold text-ink-900" : "bg-ink-700 text-muted hover:text-[var(--text)]",
+                        )}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {rows.length === 0 ? (
+                  <div className="text-sm text-faint">
+                    {tagFilter
+                      ? "No hands carry that tag among the recent ones."
+                      : "Finished hands appear here and stay replayable after a restart."}
+                  </div>
+                ) : (
+                  <div className="max-h-[280px] space-y-1 overflow-auto pr-1">
+                    {rows.map((h, i) => {
+                      const note = handNotes[handKey(h.startedAt)];
+                      return (
+                        <div
+                          key={`${h.startedAt}-${i}`}
+                          className="rounded-lg border border-[var(--line)] bg-ink-850 px-3 py-1.5 text-[0.78rem] transition hover:bg-ink-700"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <button onClick={() => setReplay(h)} className="flex-1 text-left text-[var(--text)] hover:text-gold-light">
+                              Hand #{h.id} · {new Date(h.startedAt).toLocaleString()}
+                            </button>
+                            <span className={cx("mono", h.heroNet >= 0 ? "text-good" : "text-bad")}>
+                              {fmtSigned(h.heroNet / h.bb)} bb
+                            </span>
+                            <button
+                              onClick={() => setNoteHand(h)}
+                              title={note ? "Edit note" : "Add a note / tag"}
+                              className={cx("transition", note ? "text-gold" : "text-faint hover:text-[var(--text)]")}
+                              aria-label={note ? "Edit note" : "Add note"}
+                            >
+                              <Icon name="book" size={14} />
+                            </button>
+                          </div>
+                          {note && (note.note || note.tags.length > 0) && (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              {note.tags.map((t) => (
+                                <span key={t} className="rounded-full bg-gold/15 px-2 py-0.5 text-[0.64rem] font-semibold text-gold">
+                                  {t}
+                                </span>
+                              ))}
+                              {note.note && <span className="truncate text-[0.7rem] text-muted">{note.note}</span>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </Card>
         {/* Practice heatmap — quiet consistency, not guilt */}
         <Card className="mt-4">
@@ -387,6 +453,7 @@ export function StatsView() {
       </div>
 
       <HandReplayModal hand={replay} onClose={() => setReplay(null)} />
+      <HandNoteEditor hand={noteHand} onClose={() => setNoteHand(null)} />
 
       {/* Typed-confirmation reset with a backup offer */}
       <Modal
