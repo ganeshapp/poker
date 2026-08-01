@@ -162,7 +162,8 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
   const hero = state.players[0];
   if (!hero.hole) return null;
   const la = legalActions(state);
-  if (action.type === "check") return null;
+  // Checks are evaluated too (below) — half the game used to be
+  // invisible to the coach.
 
   const villId = state.aggressor != null && state.aggressor !== 0 ? state.aggressor : firstOpponentInHand(state);
   const vill = state.players[villId];
@@ -180,7 +181,11 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
   // Price of the decision — known before simulating, and used both for
   // verdicts and to decide whether the estimate needs tightening.
   const costNow =
-    action.type === "fold" || action.type === "call" ? la.callAmount : (action.amount ?? 0) - hero.committed;
+    action.type === "check"
+      ? 0
+      : action.type === "fold" || action.type === "call"
+        ? la.callAmount
+        : (action.amount ?? 0) - hero.committed;
   const finalPotNow = state.pot + costNow;
   const threshold = finalPotNow > 0 ? costNow / finalPotNow : 0;
 
@@ -313,10 +318,64 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
     };
   }
 
+  if (action.type === "check") {
+    // Only speak up when checking left clear money behind: strong
+    // hands any street, medium-strong only on the river (earlier
+    // streets can legitimately pot-control).
+    if (state.board.length < 3 || equity < 0.65) return null;
+    const strong = equity - margin > 0.75;
+    if (!strong && state.street !== "river") return null;
+    const betTo = Math.round(state.pot * 0.66);
+    return {
+      ...base,
+      blocking: false,
+      verdict: strong ? "mistake" : "thin",
+      title: "Missed value",
+      equity,
+      plain: strong
+        ? `Your hand wins ${fmtTimes(equity)} — that's a hand that wants to bet. Checking here gives up a clear value bet: when you're ahead this often, put chips in and get paid.`
+        : `Your hand wins ${fmtTimes(equity)} — usually strong enough for a small value bet here. Checking is cautious but leaves some money behind.`,
+      text: `${pct}% equity checked ${state.street === "river" ? "on the river" : "back"} — a value bet (~${betTo} chips) was available.`,
+      steps: [
+        `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity.`,
+        `A ~66% pot bet (${betTo}) gets called by enough worse hands to profit when you win this often.`,
+        `Checking wins the same pot but never builds it — EV left behind grows with your win chance.`,
+      ],
+      expert: [sourceLine, marginNote, `Post-flop aggression verdicts are heuristic (no solver) — treat as guidance, not gospel.`],
+    };
+  }
+
   // bet / raise
   let verdict: Verdict = "ok";
   let text: string;
   let plain: string;
+  // Honest little fold-equity model: opponents continue less often vs
+  // bigger bets; a pure bluff needs foldsNeeded to break even.
+  const betFrac = costNow / Math.max(1, state.pot);
+  const continueFrac = Math.min(0.75, Math.max(0.3, 0.62 - 0.2 * betFrac));
+  const pAllFold = Math.pow(1 - continueFrac, opponents);
+  const foldsNeeded = costNow / (state.pot + costNow);
+  const evBluff = pAllFold * state.pot + (1 - pAllFold) * (equity * (state.pot + 2 * costNow) - costNow);
+  if (equity + margin < 0.32 && evBluff < -0.75 * bb) {
+    return {
+      ...base,
+      blocking: false,
+      verdict: "mistake",
+      title: "Expensive bluff",
+      equity,
+      potOdds,
+      evChips: evBluff,
+      plain: `A very expensive bluff: if anyone calls, your hand wins only ${fmtTimes(equity)}${opponents > 1 ? `, and with ${opponents} opponents someone usually calls` : ""}. You'd need folds ${fmtTimes(foldsNeeded)} just to break even — this bet loses money over time.`,
+      text: `Bluffing ${Math.round(betFrac * 100)}% pot with ${pct}% equity vs ${oppDesc}: estimated EV ${(evBluff / bb).toFixed(1)} bb.`,
+      steps: [
+        `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity when called.`,
+        `Break-even fold rate = bet / (pot + bet) = ${Math.round(foldsNeeded * 100)}%.`,
+        `Assuming each opponent continues ~${Math.round(continueFrac * 100)}% vs this size, everyone folds only ${Math.round(pAllFold * 100)}% of the time.`,
+        `EV ≈ ${Math.round(pAllFold * 100)}% × ${state.pot} + ${Math.round((1 - pAllFold) * 100)}% × (${pct}% × ${state.pot + 2 * costNow} − ${costNow}) ≈ ${evBluff.toFixed(0)} chips.`,
+      ],
+      expert: [sourceLine, marginNote, `The fold-equity model is heuristic (fixed continue rates by bet size, no ranges) — aggression verdicts are approximate by design.`],
+    };
+  }
   if (equity > 0.6) {
     verdict = "great";
     plain = `Betting with the goods: if someone calls, your hand wins ${fmtTimes(equity)}. Money goes in with the best of it — and every fold is profit too.`;
@@ -575,8 +634,11 @@ export const useGame = create<GameStore>((set, get) => {
           if (review.verdict === "mistake") {
             const la2 = legalActions(t);
             const bb = t.bigBlind;
+            // Best alternative per mistake type: bad call -> fold, bad
+            // fold -> call, missed-value check -> bet, bad bluff bet ->
+            // check, bad raise -> fold.
             const best: DrillAction =
-              a.type === "call" ? "fold" : a.type === "fold" ? "call" : a.type === "raise" ? "raise" : a.type === "bet" ? "bet" : "fold";
+              a.type === "call" ? "fold" : a.type === "fold" ? "call" : a.type === "check" ? "bet" : a.type === "bet" ? "check" : "fold";
             const options: DrillOption[] =
               la2.toCall > 0
                 ? [
