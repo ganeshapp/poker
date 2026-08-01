@@ -19,6 +19,7 @@ export function SideRail() {
   const session = useGame((s) => s.session);
   const endSession = useGame((s) => s.endSession);
   const bb = useGame((s) => s.table.bigBlind);
+  const hero = useGame((s) => s.table.players[0]);
   const guesses = useStats((s) => s.guesses);
 
   const sessionBb = session.netChips / bb;
@@ -58,6 +59,30 @@ export function SideRail() {
             </div>
           </Tooltip>
         </div>
+        {/* Hero self-stats: you can't fix "I play too many hands"
+            without seeing the number. */}
+        {hero.handsSeen >= 8 && (
+          <Tooltip
+            content={
+              <div className="space-y-1">
+                <div className="font-semibold text-gold-light">Your VPIP / PFR</div>
+                How often YOU voluntarily put money in pre-flop, and how often you raise. Most winning
+                6-max players sit around 22–28 VPIP and 16–22 PFR. Much higher = too loose; a big gap
+                between the numbers = too passive.
+              </div>
+            }
+          >
+            <div className="mt-2 flex cursor-help items-center justify-between rounded-lg bg-ink-850 px-2.5 py-1.5 text-[0.72rem]">
+              <span className="text-muted">Your style</span>
+              <span className="mono font-semibold text-[var(--text)]">
+                {Math.round((hero.vpipCount / hero.handsSeen) * 100)}
+                <span className="text-faint">/</span>
+                {Math.round((hero.pfrCount / hero.handsSeen) * 100)}
+                <span className="ml-1 text-faint">· {hero.handsSeen}h</span>
+              </span>
+            </div>
+          </Tooltip>
+        )}
         <div className="mt-2">
           <Stat label="Read accuracy" value={avgAcc === null ? "—" : `${Math.round(avgAcc * 100)}%`} wide />
         </div>

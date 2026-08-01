@@ -536,9 +536,22 @@ export const useGame = create<GameStore>((set, get) => {
 
     newSession: () => {
       const base = createTable(CONFIG);
-      const players = base.players.map((p) =>
-        p.isHero ? p : { ...p, archetype: ARCHE_POOL[Math.floor(Math.random() * ARCHE_POOL.length)] },
-      );
+      const jitter = (v: number, frac: number, lo: number, hi: number) =>
+        Math.min(hi, Math.max(lo, v * (1 - frac + Math.random() * 2 * frac)));
+      const players = base.players.map((p) => {
+        if (p.isHero) return p;
+        const archetype = ARCHE_POOL[Math.floor(Math.random() * ARCHE_POOL.length)];
+        const cfg = ARCHETYPES[archetype];
+        return {
+          ...p,
+          archetype,
+          dials: {
+            aggression: jitter(cfg.aggression, 0.2, 0.05, 0.95),
+            stickiness: jitter(cfg.stickiness, 0.2, 0.05, 0.95),
+            cbetFlop: jitter(cfg.cbetFlop, 0.15, 20, 95),
+          },
+        };
+      });
       set({
         table: { ...base, players },
         session: { active: true, startedAt: Date.now(), hands: 0, netChips: 0, history: [] },

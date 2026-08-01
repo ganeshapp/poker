@@ -139,6 +139,8 @@ export function startHand(prev: GameState): GameState {
     p.revealed = false;
     p.hasFolded = false;
     p.foldedStreet = undefined;
+    p.vpipThisHand = false;
+    p.pfrThisHand = false;
     p.isAllIn = false;
     p.committed = 0;
     p.committedTotal = 0;
@@ -254,6 +256,10 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
       break;
     }
     case "call": {
+      if (s.street === "preflop" && !p.vpipThisHand) {
+        p.vpipThisHand = true;
+        p.vpipCount += 1;
+      }
       const amt = Math.min(toCall, p.stack);
       commit(s, p, amt);
       p.acted = true;
@@ -262,6 +268,10 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
       break;
     }
     case "bet": {
+      if (s.street === "preflop") {
+        if (!p.vpipThisHand) { p.vpipThisHand = true; p.vpipCount += 1; }
+        if (!p.pfrThisHand) { p.pfrThisHand = true; p.pfrCount += 1; }
+      }
       let to = Math.max(action.amount ?? 0, Math.min(s.bigBlind, maxTotal));
       to = Math.min(to, maxTotal);
       commit(s, p, to - p.committed);
@@ -275,6 +285,10 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
       break;
     }
     case "raise": {
+      if (s.street === "preflop") {
+        if (!p.vpipThisHand) { p.vpipThisHand = true; p.vpipCount += 1; }
+        if (!p.pfrThisHand) { p.pfrThisHand = true; p.pfrCount += 1; }
+      }
       let to = action.amount ?? s.currentBet + s.lastRaiseSize;
       to = Math.min(to, maxTotal);
       const raiseSize = to - s.currentBet;

@@ -112,6 +112,12 @@ export interface Player {
   handsSeen: number;
   vpipCount: number;
   pfrCount: number;
+  /** Transient per-hand flags backing the observed counters. */
+  vpipThisHand?: boolean;
+  pfrThisHand?: boolean;
+  /** Per-session jitter of behavioural knobs, so the archetype label
+      isn't a full spoiler. */
+  dials?: { aggression: number; stickiness: number; cbetFlop: number };
   sittingOut: boolean;
 }
 

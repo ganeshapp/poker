@@ -85,7 +85,9 @@ export function decideBot(s: GameState, seat: number): BotDecision {
 function decideBotInner(s: GameState, seat: number): BotDecision {
   const p = s.players[seat];
   if (!p.archetype || !p.hole) return { action: { type: "fold" }, range: [] };
-  const cfg = ARCHETYPES[p.archetype];
+  // Per-session jittered dials keep the archetype label from being a
+  // full spoiler: two Nits won't play identically.
+  const cfg = { ...ARCHETYPES[p.archetype], ...(p.dials ?? {}) };
   const la = legalActions(s);
   const label = cardsToLabel(p.hole[0], p.hole[1]);
   const bb = s.bigBlind;
