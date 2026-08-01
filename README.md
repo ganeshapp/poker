@@ -110,6 +110,7 @@ node --experimental-transform-types scripts/leaks_test.ts      # leak detection
 node --experimental-transform-types scripts/puzzles_test.ts    # drill generation + grading
 node --experimental-transform-types scripts/golden_test.ts     # pinned evaluator scores + chart snapshots
 node --experimental-transform-types scripts/pushfold_test.ts   # Nash push/fold table sanity + drill coherence
+node --experimental-transform-types scripts/srs_test.ts        # spaced-repetition scheduler
 node --experimental-transform-types scripts/preflop_test.ts    # 100bb preflop chart sanity + drill coherence
 node --experimental-transform-types scripts/bot_test.ts        # bot preflop properties + open-jam exploit sim
 

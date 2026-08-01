@@ -606,6 +606,9 @@ export interface LeakSpot {
   equity?: number;
   potOdds?: number;
   ts: number;
+  /** Spaced-repetition state (added by the leak store; absent on
+      records saved before scheduling existed). */
+  srs?: { due: number; intervalDays: number; ease: number; reps: number; lapses: number };
 }
 
 /** Rebuild a playable puzzle from a saved leak spot. */
