@@ -7,6 +7,7 @@ import { StudyView } from "@/views/StudyView";
 import { StatsView } from "@/views/StatsView";
 import { AboutView } from "@/views/AboutView";
 import { useTheme } from "@/store/themeStore";
+import { ShortcutOverlay } from "@/components/ui/ShortcutOverlay";
 import { cx } from "@/lib/cx";
 
 type Tab = "play" | "drills" | "study" | "stats" | "about";
@@ -65,7 +66,9 @@ export default function App() {
             Use <span className="text-[var(--text)]">Guess Range</span> before you act, then let the EV
             Coach grade the decision.
           </div>
-          <div className="px-1 text-[0.62rem] text-faint">All-In · offline poker dojo</div>
+          <div className="px-1 text-[0.62rem] text-faint">
+            All-In · offline poker dojo · press <kbd className="text-muted">?</kbd> for shortcuts
+          </div>
         </div>
       </nav>
 
@@ -76,6 +79,8 @@ export default function App() {
         {tab === "stats" && <StatsView />}
         {tab === "about" && <AboutView />}
       </main>
+
+      <ShortcutOverlay />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { SessionSummaryModal } from "@/components/play/SessionSummaryModal";
 import { GuessModal } from "@/components/range/GuessModal";
 import { Button } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
+import { isTypingTarget, hasModifier } from "@/lib/hotkeys";
 
 export function PlayView() {
   const sessionActive = useGame((s) => s.session.active);
@@ -22,7 +23,8 @@ export function PlayView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "Space") return;
+      if (e.code !== "Space" && e.key !== " ") return;
+      if (isTypingTarget(e) || hasModifier(e)) return;
       const g = useGame.getState();
       if (!g.session.active) {
         e.preventDefault();
