@@ -2,7 +2,7 @@ import type { Action, Archetype, Card, GameState, HandLabel } from "../types/pok
 import { legalActions } from "./engine.ts";
 import { ARCHETYPES } from "./archetypes.ts";
 import { allLabels, cardsToLabel, labelToCombos } from "../engine/notation.ts";
-import { equityVsRandom, comboToInts, hashSeed } from "../engine/equity.ts";
+import { equityVsRandom, equityVsRange, comboToInts, hashSeed } from "../engine/equity.ts";
 import { evaluateInts } from "../engine/evaluator.ts";
 import { cardToInt } from "../engine/cards.ts";
 import { PREFLOP_100 } from "../data/preflop.ts";
@@ -198,7 +198,6 @@ function decideBotInner(s: GameState, seat: number): BotDecision {
   // ---- Postflop ----
   const holeInts = comboToInts(p.hole);
   const boardInts = s.board.map(cardToInt);
-  const e = equityVsRandom(holeInts, boardInts, 320).equity;
   const facingBet = la.toCall > 0;
   // Perceived-range bookkeeping: whatever this bot does, its stored
   // range narrows consistently with the policy that produced the
@@ -206,31 +205,154 @@ function decideBotInner(s: GameState, seat: number): BotDecision {
   const stored = s.botRanges[p.id] ?? [];
   const narrowed = (kind: "aggro" | "call" | "check") => narrowRange(stored, s.board, kind, label);
 
+  // Equity vs the opponent's NARROWED range heads-up; vs random as the
+  // multiway / no-range fallback.
+  const liveOpps = s.players.filter((q) => !q.hasFolded && q.id !== seat);
+  const soleOppRange = liveOpps.length === 1 ? s.botRanges[liveOpps[0].id] : undefined;
+  let e: number;
+  if (soleOppRange && soleOppRange.length > 0) {
+    const blocked = new Set<number>([...holeInts, ...boardInts]);
+    const combos: [number, number][] = [];
+    for (const l of soleOppRange) {
+      for (const [a, b] of labelToCombos(l)) {
+        const ai = cardToInt(a);
+        const bi = cardToInt(b);
+        if (!blocked.has(ai) && !blocked.has(bi)) combos.push([ai, bi]);
+      }
+    }
+    e = combos.length
+      ? equityVsRange(holeInts, boardInts, combos, 260).equity
+      : equityVsRandom(holeInts, boardInts, 320).equity;
+  } else {
+    e = equityVsRandom(holeInts, boardInts, 320).equity;
+  }
+
+  const tex = boardTexture(boardInts);
+  const draw = drawStrength(holeInts, boardInts);
+  const multiDamp = 1 / Math.max(1, liveOpps.length); // bluff less multiway
+
   if (!facingBet) {
-    const wantsValue = e > 0.6;
-    const cbet = rnd < cfg.cbetFlop / 100 && e > 0.34;
-    const bluff = Math.random() < cfg.aggression * 0.22;
-    if ((wantsValue || cbet || bluff) && la.canBet) {
-      const to = clampInt(s.pot * 0.6, la.minRaiseTo, la.maxRaiseTo);
-      if (to > 0) return { action: { type: "bet", amount: to }, range: narrowed("aggro") };
+    if (la.canBet) {
+      if (e > 0.8) {
+        // Monster: usually bet big, but slowplay dry boards sometimes.
+        const slowplayP = tex.wet ? 0.08 : 0.28;
+        if (rnd < slowplayP && s.street !== "river") {
+          return { action: { type: "check" }, range: narrowed("check") };
+        }
+        const frac = tex.wet ? 1.0 : [0.66, 0.75, 1.25][clampInt(rnd * 3, 0, 2)];
+        const to = clampInt(s.pot * frac, la.minRaiseTo, la.maxRaiseTo);
+        return { action: { type: "bet", amount: to }, range: narrowed("aggro") };
+      }
+      if (e > 0.6) {
+        // Solid value: size up on wet boards to charge draws.
+        const to = clampInt(s.pot * (tex.wet ? 0.75 : 0.55), la.minRaiseTo, la.maxRaiseTo);
+        return { action: { type: "bet", amount: to }, range: narrowed("aggro") };
+      }
+      if (e > 0.4 && s.street === "flop" && rnd < (cfg.cbetFlop / 100) * (tex.wet ? 0.7 : 1) * multiDamp) {
+        // Small range-style c-bet on favorable, drier flops.
+        const to = clampInt(s.pot * 0.33, la.minRaiseTo, la.maxRaiseTo);
+        return { action: { type: "bet", amount: to }, range: narrowed("aggro") };
+      }
+      // Bluffs need a reason: a real draw, or a scare-card barrel.
+      const bluffP =
+        draw === 2
+          ? cfg.aggression * 0.55
+          : draw === 1
+            ? cfg.aggression * 0.28
+            : tex.highCard >= 12 && s.street !== "flop"
+              ? cfg.aggression * 0.12
+              : 0;
+      if (Math.random() < bluffP * multiDamp) {
+        const to = clampInt(s.pot * 0.66, la.minRaiseTo, la.maxRaiseTo);
+        return { action: { type: "bet", amount: to }, range: narrowed("aggro") };
+      }
     }
     return { action: { type: "check" }, range: narrowed("check") };
   }
 
-  // Facing a bet.
+  // ---- Facing a bet ----
   const needed = la.callAmount / (s.pot + la.callAmount);
-  if (e > 0.78 && la.canRaise && Math.random() < cfg.aggression) {
-    const to = clampInt(s.currentBet + s.pot * 0.8, la.minRaiseTo, la.maxRaiseTo);
+  // Value raises from 0.72 (non-nutted included), sized up on wet boards.
+  if (e > 0.72 && la.canRaise && Math.random() < cfg.aggression * (e > 0.85 ? 1 : 0.6)) {
+    const frac = tex.wet ? 1.0 : 0.8;
+    const to = clampInt(s.currentBet + s.pot * frac, la.minRaiseTo, la.maxRaiseTo);
     return { action: { type: "raise", amount: to }, range: narrowed("aggro") };
   }
+  // Semi-bluff (check-)raise with strong draws.
+  if (draw === 2 && s.street !== "river" && la.canRaise && Math.random() < cfg.aggression * 0.3 * multiDamp) {
+    const to = clampInt(s.currentBet + s.pot * 0.9, la.minRaiseTo, la.maxRaiseTo);
+    return { action: { type: "raise", amount: to }, range: narrowed("aggro") };
+  }
+  // Draws call a little wider (implied-odds proxy); rivers don't.
+  const effE = Math.min(0.95, e + (s.street !== "river" ? draw * 0.05 : 0));
   const callThreshold = needed * (1 - cfg.stickiness * 0.5);
-  if (e >= callThreshold && la.canCall) {
+  if (effE >= callThreshold && la.canCall) {
     return { action: { type: "call", amount: la.callAmount }, range: narrowed("call") };
   }
   if (cfg.stickiness > 0.7 && la.canCall && la.callAmount <= s.pot * 0.5 && Math.random() < 0.7) {
     return { action: { type: "call", amount: la.callAmount }, range: narrowed("call") };
   }
   return { action: { type: "fold" }, range: [] };
+}
+
+/* ---- Board texture + draw detection (cheap bitmask heuristics) ---- */
+
+function boardTexture(boardInts: number[]): { wet: boolean; paired: boolean; highCard: number } {
+  const suits = [0, 0, 0, 0];
+  const rankCounts = new Map<number, number>();
+  let rankMask = 0;
+  let highCard = 0;
+  for (const c of boardInts) {
+    suits[c & 3]++;
+    const r = (c >> 2) + 2;
+    rankCounts.set(r, (rankCounts.get(r) ?? 0) + 1);
+    rankMask |= 1 << r;
+    if (r > highCard) highCard = r;
+  }
+  const flushy = Math.max(...suits) >= Math.min(3, boardInts.length);
+  // Connected: any 5-rank window holding 3+ board ranks.
+  let straighty = false;
+  const m = rankMask | (rankMask & (1 << 14) ? 1 << 1 : 0);
+  for (let lo = 1; lo <= 10; lo++) {
+    let n = 0;
+    for (let r = lo; r < lo + 5; r++) if (m & (1 << r)) n++;
+    if (n >= 3) straighty = true;
+  }
+  const paired = [...rankCounts.values()].some((n) => n >= 2);
+  return { wet: flushy || straighty, paired, highCard };
+}
+
+/** 0 = none, 1 = weak (gutshot / flop 3-flush), 2 = strong (flush draw / OESD). */
+function drawStrength(holeInts: [number, number], boardInts: number[]): number {
+  if (boardInts.length >= 5) return 0;
+  const all = [...holeInts, ...boardInts];
+  const suits = [0, 0, 0, 0];
+  let mask = 0;
+  for (const c of all) {
+    suits[c & 3]++;
+    mask |= 1 << ((c >> 2) + 2);
+  }
+  const holeSuits = [holeInts[0] & 3, holeInts[1] & 3];
+  const flushDraw = suits.some((n, si) => n === 4 && holeSuits.includes(si));
+  if (mask & (1 << 14)) mask |= 1 << 1;
+  let fourToStraight = false;
+  for (let lo = 1; lo <= 10; lo++) {
+    let n = 0;
+    for (let r = lo; r < lo + 5; r++) if (mask & (1 << r)) n++;
+    if (n >= 4) fourToStraight = true;
+  }
+  let run = 0;
+  let bestRun = 0;
+  for (let r = 1; r <= 14; r++) {
+    run = mask & (1 << r) ? run + 1 : 0;
+    bestRun = Math.max(bestRun, run);
+  }
+  const oesd = bestRun >= 4;
+  const gutshot = fourToStraight && !oesd;
+  const threeFlush = boardInts.length === 3 && suits.some((n, si) => n === 3 && holeSuits.includes(si));
+  if (flushDraw || oesd) return 2;
+  if (gutshot || threeFlush) return 1;
+  return 0;
 }
 
 /* ==================================================================
