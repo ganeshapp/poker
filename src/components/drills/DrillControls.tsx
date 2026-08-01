@@ -111,6 +111,12 @@ export function DrillControls() {
             )}
           </div>
 
+          {!result.correct && result.evLossBb !== undefined && result.evLossBb > 0.05 && (
+            <p className="mt-2 text-[0.8rem] font-semibold" style={{ color: "var(--bad)" }}>
+              That choice costs about {result.evLossBb.toFixed(1)} bb every time —{" "}
+              {result.evLossBb < 0.5 ? "a small leak" : result.evLossBb < 1.5 ? "a real leak" : "a blunder-sized leak"}.
+            </p>
+          )}
           <p className="mt-2 text-[0.84rem] leading-relaxed text-muted">{result.rationale}</p>
 
           {/* Per-option outcomes in beginner terms (postflop math spots) */}
