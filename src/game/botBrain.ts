@@ -1,20 +1,49 @@
-import type { Action, GameState, HandLabel } from "../types/poker.ts";
+import type { Action, Archetype, GameState, HandLabel } from "../types/poker.ts";
 import { legalActions } from "./engine.ts";
 import { ARCHETYPES } from "./archetypes.ts";
-import { buildPreflopRanges, positionMultiplier, topPercentRange } from "../engine/ranges.ts";
 import { allLabels, cardsToLabel } from "../engine/notation.ts";
 import { equityVsRandom, comboToInts } from "../engine/equity.ts";
 import { cardToInt } from "../engine/cards.ts";
+import { PREFLOP_100 } from "../data/preflop.ts";
 
 /* ==================================================================
    Bot decision policy.
 
-   Preflop: position/archetype-aware ranges (Chen-ranked) drive open /
-   3-bet / call / fold. Postflop: Monte-Carlo hand strength (TS engine,
-   fast + synchronous) combined with the archetype's aggression and
-   "stickiness" knobs. Also returns the perceived range it is
-   representing, which the store records for the Peek feature.
+   Preflop: the real 100bb baseline charts (src/data/preflop.ts) drive
+   open / 3-bet / call / fold, with each archetype applying principled
+   deviations (Nit continues tighter, Station calls wide but rarely
+   raises, LAG adds bluffs) — bots are exploitable BY DESIGN, never
+   absurd: premiums never fold preflop, junk never stacks off cold.
+   Postflop: Monte-Carlo hand strength (TS engine, fast + synchronous)
+   combined with the archetype's aggression and "stickiness" knobs.
+   Also returns the perceived range it is representing, which the
+   store records for the Peek feature.
    ================================================================== */
+
+interface PreflopDials {
+  open: number; // multiplier on RFI frequencies
+  threebet: number; // multiplier on 3-bet frequencies
+  call: number; // multiplier on calling frequencies
+  limpWide: boolean; // limps playable-but-not-opened hands when cheap
+}
+
+const DIALS: Record<Archetype, PreflopDials> = {
+  TAG: { open: 1.0, threebet: 1.0, call: 1.0, limpWide: false },
+  LAG: { open: 1.3, threebet: 1.6, call: 1.15, limpWide: true },
+  Nit: { open: 0.7, threebet: 0.55, call: 0.8, limpWide: false },
+  Station: { open: 0.45, threebet: 0.3, call: 1.6, limpWide: true },
+};
+
+/** Hands that never fold preflop, whatever the price. */
+const PREMIUM = new Set<HandLabel>(["AA", "KK", "QQ", "AKs", "AKo"] as HandLabel[]);
+const PREMIUM_LIST = [...PREMIUM];
+
+/** Labels a chart plays at least `min` of the time (perceived-range lists). */
+function chartLabels(chart: Record<string, number>, min: number): HandLabel[] {
+  const out: HandLabel[] = [];
+  for (const [l, f] of Object.entries(chart)) if (f >= min) out.push(l as HandLabel);
+  return out;
+}
 
 export interface BotDecision {
   action: Action;
@@ -48,40 +77,105 @@ export function decideBot(s: GameState, seat: number): BotDecision {
   const rnd = Math.random();
 
   if (s.street === "preflop") {
-    const ranges = buildPreflopRanges(cfg.vpip, cfg.pfr, p.position);
-    const inPlay = ranges.play.has(label);
-    const inRaise = ranges.raise.has(label);
-    const callRange = setDiff(ranges.play, ranges.raise);
+    const dial = DIALS[cfg.archetype];
     const facingRaise = s.currentBet > bb;
 
     if (!facingRaise) {
-      if (inRaise) {
+      if (la.canCheck) {
+        // BB with the option: raise premiums over limps, otherwise check.
+        const f = Math.min(1, (PREFLOP_100.vsRfi.BB_vs_SB.threebet[label] ?? 0) * dial.threebet);
+        if (rnd < f && la.canRaise) {
+          const limpers = s.players.filter(
+            (q) => !q.hasFolded && q.committed === bb && q.position !== "BB",
+          ).length;
+          const to = clampInt((3 + limpers) * bb, la.minRaiseTo, la.maxRaiseTo);
+          return { action: betOrRaise(s, to), range: chartLabels(PREFLOP_100.vsRfi.BB_vs_SB.threebet, 0.25) };
+        }
+        return { action: { type: "check" }, range: setDiff(new Set(ALL_LABELS), new Set(chartLabels(PREFLOP_100.vsRfi.BB_vs_SB.threebet, 0.5))) };
+      }
+
+      const chart = PREFLOP_100.rfi[p.position] ?? PREFLOP_100.rfi.SB;
+      const base = chart[label] ?? 0;
+      // Deviations trim the BOTTOM of the range, never the top:
+      // premiums always open; Nit/Station kill marginal opens, LAG
+      // rounds its mixed opens up.
+      let openFreq: number;
+      if (PREMIUM.has(label)) openFreq = 1;
+      else if (base === 0) openFreq = 0;
+      else if (cfg.archetype === "LAG") openFreq = Math.max(base * dial.open, 0.9);
+      else if (cfg.archetype === "Nit") openFreq = base >= 1 ? 0.92 : base * 0.35;
+      else if (cfg.archetype === "Station") openFreq = base >= 1 ? 0.55 : base * 0.25;
+      else openFreq = base;
+      openFreq = Math.min(1, openFreq);
+      if (rnd < openFreq) {
         const limpers = s.players.filter(
           (q) => !q.hasFolded && q.committed === bb && q.position !== "BB",
         ).length;
         const to = clampInt((2.5 + limpers) * bb, la.minRaiseTo, la.maxRaiseTo);
-        return { action: betOrRaise(s, to), range: [...ranges.raise] };
+        return { action: betOrRaise(s, to), range: chartLabels(chart, 0.4) };
       }
-      if (la.canCheck) {
-        // BB with the option: range is everything not raised.
-        return { action: { type: "check" }, range: setDiff(new Set(ALL_LABELS), ranges.raise) };
-      }
-      if (inPlay && la.canCall && la.callAmount <= bb && (cfg.archetype === "Station" || cfg.archetype === "LAG")) {
-        return { action: { type: "call", amount: la.callAmount }, range: callRange };
+      // Loose types limp playable hands when the price is a limp.
+      if (dial.limpWide && la.canCall && la.callAmount <= bb && base > 0) {
+        return { action: { type: "call", amount: la.callAmount }, range: chartLabels(chart, 0.01) };
       }
       return { action: { type: "fold" }, range: [] };
     }
 
-    // Facing a raise.
-    const threeBetPct = Math.max(2, cfg.pfr * positionMultiplier(p.position) * 0.4);
-    const threeBet = topPercentRange(threeBetPct);
-    if (threeBet.has(label) && rnd < cfg.aggression) {
-      const to = clampInt(s.currentBet * 3, la.minRaiseTo, la.maxRaiseTo);
-      return { action: betOrRaise(s, to), range: [...threeBet] };
+    // ---- Facing a raise ----
+    const aggSeat = s.aggressor;
+    const raiserPos = aggSeat != null && aggSeat !== seat ? s.players[aggSeat].position : "CO";
+    const facing3bet = s.currentBet > 4.5 * bb; // beyond a standard single open
+    const charts = PREFLOP_100.vsRfi[`${p.position}_vs_${raiserPos}`];
+
+    if (!facing3bet && charts) {
+      let f3 = charts.threebet[label] ?? 0;
+      let fc = charts.call[label] ?? 0;
+      if (cfg.archetype === "Station") {
+        // Stations flat their whole continue range and only raise monsters.
+        fc = Math.min(1, (f3 + fc) * dial.call);
+        f3 = label === "AA" || label === "KK" ? 0.5 : 0;
+      } else {
+        if (cfg.archetype === "Nit" && f3 < 0.9) f3 *= 0.3; // drop bluff 3-bets
+        f3 = Math.min(1, f3 * dial.threebet);
+        fc = Math.min(1 - f3, fc * dial.call);
+      }
+      if (PREMIUM.has(label)) f3 = Math.max(f3, 0.85); // premiums stay aggressive
+      if (rnd < f3 && la.canRaise) {
+        const to = clampInt(s.currentBet * 3.2, la.minRaiseTo, la.maxRaiseTo);
+        return { action: betOrRaise(s, to), range: chartLabels(charts.threebet, 0.25) };
+      }
+      if (rnd < f3 + fc && la.canCall) {
+        return { action: { type: "call", amount: la.callAmount }, range: chartLabels(charts.call, 0.25) };
+      }
+      if (PREMIUM.has(label) && la.canCall) {
+        // Safety net: a premium may never fold preflop.
+        return { action: { type: "call", amount: la.callAmount }, range: PREMIUM_LIST };
+      }
+      return { action: { type: "fold" }, range: [] };
     }
-    if (inPlay && la.canCall) {
-      const priceOk = la.callAmount <= bb * 4 || cfg.stickiness > 0.6;
-      if (priceOk) return { action: { type: "call", amount: la.callAmount }, range: callRange };
+
+    // ---- Facing a 3-bet or bigger (or an uncharted spot) ----
+    if (label === "AA" || label === "KK") {
+      if (la.canRaise && rnd < 0.8) {
+        const to = clampInt(s.currentBet * 2.6, la.minRaiseTo, la.maxRaiseTo);
+        return { action: betOrRaise(s, to), range: PREMIUM_LIST };
+      }
+      if (la.canCall) return { action: { type: "call", amount: la.callAmount }, range: PREMIUM_LIST };
+      if (la.canRaise) return { action: betOrRaise(s, la.maxRaiseTo), range: PREMIUM_LIST };
+    }
+    const f3vs = charts?.threebet[label] ?? (PREMIUM.has(label) ? 1 : 0);
+    if (f3vs >= 0.9) {
+      // QQ / AK class: continue — occasionally 4-bet, mostly call.
+      if (la.canRaise && rnd < 0.1 + 0.35 * cfg.aggression) {
+        const to = clampInt(s.currentBet * 2.6, la.minRaiseTo, la.maxRaiseTo);
+        return { action: betOrRaise(s, to), range: PREMIUM_LIST };
+      }
+      if (la.canCall) return { action: { type: "call", amount: la.callAmount }, range: PREMIUM_LIST };
+    }
+    // Speculative continues vs a 3-bet: only at a sane price, by the
+    // hand's own 3-bet-chart frequency, never with pure junk.
+    if (f3vs > 0 && la.canCall && la.callAmount <= 12 * bb && rnd < f3vs * (0.4 + cfg.stickiness)) {
+      return { action: { type: "call", amount: la.callAmount }, range: chartLabels(charts?.threebet ?? {}, 0.25) };
     }
     return { action: { type: "fold" }, range: [] };
   }

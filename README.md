@@ -111,6 +111,7 @@ node --experimental-transform-types scripts/puzzles_test.ts    # drill generatio
 node --experimental-transform-types scripts/golden_test.ts     # pinned evaluator scores + chart snapshots
 node --experimental-transform-types scripts/pushfold_test.ts   # Nash push/fold table sanity + drill coherence
 node --experimental-transform-types scripts/preflop_test.ts    # 100bb preflop chart sanity + drill coherence
+node --experimental-transform-types scripts/bot_test.ts        # bot preflop properties + open-jam exploit sim
 
 # Rust engine:
 cargo test --manifest-path poker-core/Cargo.toml
