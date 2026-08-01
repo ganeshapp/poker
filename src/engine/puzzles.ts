@@ -3,6 +3,7 @@ import { makeDeck, shuffle, cardToInt } from "./cards.ts";
 import { cardsToLabel, labelToCombos } from "./notation.ts";
 import { topPercentRange } from "./ranges.ts";
 import { equityVsRange, comboToInts, hashSeed } from "./equity.ts";
+import { NASH_SHOVE, NASH_CALL, type PushFoldPos } from "../data/pushfold.ts";
 
 /* ==================================================================
    Drills — procedural puzzle generator + heuristic grader.
@@ -410,26 +411,49 @@ export function generatePuzzle(): Puzzle {
   return genPostflopCheck();
 }
 
-/* ------------------- Push/Fold (simplified short-stack charts) ------------------- */
+/* --------------- Push/Fold (computed Nash equilibrium tables) --------------- */
 
-const SHOVE_BASE: Partial<Record<Position, number>> = { UTG: 16, MP: 22, CO: 38, BTN: 55, SB: 50 };
-const CALL_BASE: Partial<Record<Position, number>> = { BTN: 38, CO: 30, SB: 42 };
+const PF_STACKS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-const clampPct = (x: number) => Math.max(4, Math.min(92, Math.round(x)));
+/** Grade + accept-set + beginner-first rationale from an equilibrium
+    frequency. True mixed-frequency hands accept either answer. */
+function gradeFromFreq(
+  freq: number,
+  label: string,
+  stack: number,
+  aggressive: DrillAction,
+  aggroWord: string,
+  context: string,
+): { best: DrillAction; accept: DrillAction[]; rationale: string } {
+  const best: DrillAction = freq >= 0.5 ? aggressive : "fold";
+  const mixed = freq > 0.2 && freq < 0.8;
+  const accept: DrillAction[] = mixed ? ["fold", aggressive] : [best];
+  let rationale: string;
+  if (freq >= 0.98) {
+    rationale = `${context} ${label} is clearly inside the equilibrium ${aggroWord} range at ${stack} bb — ${aggroWord}.`;
+  } else if (freq <= 0.02) {
+    rationale = `${context} ${label} is outside the equilibrium ${aggroWord} range at ${stack} bb — fold.`;
+  } else {
+    rationale = `${context} A true mixed spot: the equilibrium ${aggroWord}s ${label} about ${Math.round(freq * 100)}% of the time here, so ${aggroWord}ing and folding are both fine.`;
+  }
+  return { best, accept, rationale };
+}
 
 export function generatePushFold(): Puzzle {
   const deck = shuffle(makeDeck());
   const hole: [Card, Card] = [deck[0], deck[1]];
   const label = cardsToLabel(hole[0], hole[1]);
-  const stack = rint(8, 14); // bb
-  const stackFactor = 1 + (10 - stack) * 0.04; // shorter → wider
+  const stack = PF_STACKS[rint(0, PF_STACKS.length - 1)]; // bb
 
   if (Math.random() < 0.6) {
     // Open-shove: folded to hero late
     const heroPos = (["MP", "CO", "BTN", "SB"] as Position[])[rint(0, 3)];
-    const pct = clampPct((SHOVE_BASE[heroPos] ?? 20) * stackFactor);
-    const inRange = topPercentRange(pct).has(label);
-    const best: DrillAction = inRange ? "raise" : "fold";
+    const freq = NASH_SHOVE[stack]?.[heroPos as PushFoldPos]?.[label] ?? 0;
+    const {
+      best,
+      accept,
+      rationale,
+    } = gradeFromFreq(freq, label, stack, "raise", "jam", `Folded to you in the ${heroPos} with ${stack} bb (Nash, chip-EV, no antes).`);
     const heroIdx = ORDER.indexOf(heroPos);
     const foldedBefore = ORDER.slice(0, heroIdx).filter((p) => p !== "SB" && p !== "BB");
     const pot = SB + BBV;
@@ -458,17 +482,23 @@ export function generatePushFold(): Puzzle {
         { action: "raise", label: `Shove ${stack} bb`, amount: stack },
       ],
       best,
-      accept: [best],
-      rationale: `~${stack} bb, folded to you in the ${heroPos}. A standard short-stack shove chart here plays about the top ${pct}% of hands — ${label} is ${inRange ? "in it, so jam" : "outside it, so fold"}.`,
-      difficulty: 2,
+      accept,
+      rationale,
+      difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
     };
   }
 
   // Call a shove from the BB
   const shoverPos = (["BTN", "CO", "SB"] as Position[])[rint(0, 2)];
-  const pct = clampPct((CALL_BASE[shoverPos] ?? 32) * stackFactor);
-  const inRange = topPercentRange(pct).has(label);
-  const best: DrillAction = inRange ? "call" : "fold";
+  const freq = NASH_CALL[stack]?.[`${shoverPos}>BB`]?.[label] ?? 0;
+  const { best, accept, rationale } = gradeFromFreq(
+    freq,
+    label,
+    stack,
+    "call",
+    "call",
+    `Facing a ${stack} bb all-in from the ${shoverPos} (Nash, chip-EV, no antes).`,
+  );
   const pot = r1(SB + BBV + stack);
   const frames: DrillFrame[] = [
     { text: `${stack} bb stacks. Blinds ${SB}/${BBV}.`, street: "preflop", board: [], pot: SB + BBV },
@@ -494,9 +524,9 @@ export function generatePushFold(): Puzzle {
       { action: "call", label: `Call ${r1(stack - BBV)} bb`, amount: r1(stack - BBV) },
     ],
     best,
-    accept: [best],
-    rationale: `Facing a ${stack} bb shove from the ${shoverPos}. A standard short-stack calling chart is about the top ${pct}% — ${label} ${inRange ? "is a call" : "is a fold"}.`,
-    difficulty: 2,
+    accept,
+    rationale,
+    difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
   };
 }
 

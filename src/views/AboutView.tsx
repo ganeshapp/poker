@@ -144,11 +144,12 @@ export function AboutView() {
               </span>
             </li>
             <li className="flex gap-2">
-              <Icon name="info" size={15} className="mt-0.5 shrink-0 text-info" />
+              <Icon name="check" size={15} className="mt-0.5 shrink-0 text-good" />
               <span>
-                <span className="font-semibold text-[var(--text)]">Push/fold drills</span> use
-                simplified short-stack charts, close to — but not exactly — the true equilibrium
-                (Nash) tables. Exact tables with ante support are on the roadmap.
+                <span className="font-semibold text-[var(--text)]">Push/fold drills</span> use Nash
+                equilibrium tables we computed ourselves (chip-EV, no antes, one caller at a time) —
+                mixed-frequency hands accept either answer, like the real equilibrium does. Ante and
+                ICM variants are on the roadmap.
               </span>
             </li>
           </ul>
