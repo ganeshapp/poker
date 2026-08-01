@@ -19,6 +19,8 @@ export interface HandRecord {
   archetypes: Archetype[];
   /** Hero's position this hand (recorded from schema v2 on). */
   position?: string | null;
+  /** Hero saw the flop (didn't fold preflop) — v3 on. */
+  sawFlop?: boolean;
   /** Full serialized HHHand — makes every hand replayable after a
       restart. Persisted, but not loaded into the stats snapshot. */
   handJson?: string;
@@ -47,7 +49,7 @@ const HISTORY_CAP = 800;
 /** Replayable hands kept in the localStorage fallback (quota-bound;
     SQLite keeps every hand). */
 const LS_HANDS_CAP = 100;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 type Backend = "sqlite" | "local";
 let backend: Backend | null = null;
@@ -81,8 +83,16 @@ async function migrate() {
     await addColumn(`ALTER TABLE hand_history ADD COLUMN position TEXT;`);
     await addColumn(`ALTER TABLE hand_history ADD COLUMN hand_json TEXT;`);
     await addColumn(`ALTER TABLE decisions ADD COLUMN position TEXT;`);
-    await db.execute(`PRAGMA user_version = ${SCHEMA_VERSION};`);
   }
+  if (v < 3) {
+    // v3: whether hero saw the flop (WTSD/W$SD denominators).
+    try {
+      await db.execute(`ALTER TABLE hand_history ADD COLUMN saw_flop INTEGER;`);
+    } catch {
+      /* exists */
+    }
+  }
+  await db.execute(`PRAGMA user_version = ${SCHEMA_VERSION};`);
 }
 
 async function ensureBackend(): Promise<Backend> {
@@ -160,7 +170,7 @@ export async function loadStats(): Promise<StatsSnapshot> {
       big_blind: number;
     }[];
     const hist = (await db.select(
-      `SELECT n, net_bb, pot_bb, showdown, won, archetypes, position, ts FROM hand_history ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
+      `SELECT n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, ts FROM hand_history ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
     )) as Record<string, unknown>[];
     const guesses = (await db.select(
       `SELECT accuracy, archetype, street, ts FROM range_guess ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
@@ -182,6 +192,7 @@ export async function loadStats(): Promise<StatsSnapshot> {
           won: !!h.won,
           archetypes: JSON.parse((h.archetypes as string) || "[]"),
           position: (h.position as string) || null,
+          sawFlop: h.saw_flop == null ? undefined : !!h.saw_flop,
           ts: Number(h.ts),
         })),
       guesses: guesses
@@ -254,7 +265,7 @@ export async function persistHand(rec: HandRecord, netChipsDelta: number): Promi
   if (b === "sqlite") {
     try {
       await db.execute(
-        `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, position, hand_json, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, hand_json, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           rec.n,
           rec.netBb,
@@ -263,6 +274,7 @@ export async function persistHand(rec: HandRecord, netChipsDelta: number): Promi
           rec.won ? 1 : 0,
           JSON.stringify(rec.archetypes),
           rec.position ?? null,
+          rec.sawFlop == null ? null : rec.sawFlop ? 1 : 0,
           rec.handJson ?? null,
           rec.ts,
         ],

@@ -202,6 +202,114 @@ export function StatsView() {
           )}
         </Card>
 
+        {/* Position + style numbers */}
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <Card>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
+              <Icon name="target" size={16} className="text-gold" /> Winnings by position
+            </div>
+            {(() => {
+              const POS = ["UTG", "MP", "CO", "BTN", "SB", "BB"] as const;
+              const rows = POS.map((pos) => {
+                const hs = history.filter((h) => h.position === pos);
+                const net = hs.reduce((a, h) => a + h.netBb, 0);
+                const rate = hs.length ? (net / hs.length) * 100 : 0;
+                return { pos, hands: hs.length, net, rate };
+              });
+              const tracked = rows.reduce((a, r) => a + r.hands, 0);
+              if (tracked === 0)
+                return <div className="text-sm text-faint">Position is tracked from every new hand you play.</div>;
+              const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.rate)));
+              return (
+                <div className="space-y-2">
+                  {rows.map((r) => (
+                    <div key={r.pos} className="flex items-center gap-2 text-[0.76rem]">
+                      <span className="w-9 font-semibold text-[var(--text)]">{r.pos}</span>
+                      <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-ink-600">
+                        <div
+                          className="absolute top-0 h-full rounded-full"
+                          style={{
+                            left: r.rate < 0 ? `${50 - (Math.abs(r.rate) / maxAbs) * 50}%` : "50%",
+                            width: `${(Math.abs(r.rate) / maxAbs) * 50}%`,
+                            background: r.rate >= 0 ? "var(--good)" : "var(--bad)",
+                          }}
+                        />
+                        <div className="absolute left-1/2 top-0 h-full w-px bg-white/25" />
+                      </div>
+                      <span className={cx("mono w-20 text-right", r.rate >= 0 ? "text-good" : "text-bad")}>
+                        {r.hands ? `${fmtSigned(r.rate, 0)}/100` : "—"}
+                      </span>
+                      <span className="w-10 text-right text-faint">{r.hands}h</span>
+                    </div>
+                  ))}
+                  <p className="pt-1 text-[0.7rem] leading-relaxed text-faint">
+                    Everyone wins most from the button (acting last) and loses from the blinds (forced
+                    money, acting first). Worry only if your early-position numbers are deep red — that
+                    usually means playing too many weak hands up front.
+                  </p>
+                </div>
+              );
+            })()}
+          </Card>
+
+          <Card>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
+              <Icon name="stats" size={16} className="text-gold" /> Style numbers
+            </div>
+            {(() => {
+              const flops = history.filter((h) => h.sawFlop === true);
+              const wtsd = flops.length ? history.filter((h) => h.showdown && h.sawFlop).length / flops.length : null;
+              const sdHands = history.filter((h) => h.showdown);
+              const wsd = sdHands.length ? sdHands.filter((h) => h.won).length / sdHands.length : null;
+              const aggro = decisions.filter((d) => d.action === "bet" || d.action === "raise").length;
+              const calls = decisions.filter((d) => d.action === "call").length;
+              const af = calls > 0 ? aggro / calls : null;
+              const Row = ({ label, value, band, blurb }: { label: string; value: string; band: string; blurb: string }) => (
+                <Tooltip
+                  content={
+                    <div className="space-y-1">
+                      <div className="font-semibold text-gold-light">{label}</div>
+                      <div className="text-muted">{blurb}</div>
+                      <div className="pt-0.5 text-[0.7rem] text-faint">Healthy range: {band}</div>
+                    </div>
+                  }
+                >
+                  <div className="flex cursor-help items-center justify-between border-b border-[var(--line)] py-2 text-[0.8rem] last:border-b-0">
+                    <span className="border-b border-dotted border-[var(--line-strong)] text-muted">{label}</span>
+                    <span className="mono font-semibold text-[var(--text)]">{value}</span>
+                  </div>
+                </Tooltip>
+              );
+              return (
+                <div>
+                  <Row
+                    label="Went to showdown (WTSD)"
+                    value={wtsd == null ? "—" : fmtPct(wtsd)}
+                    band="24–32%"
+                    blurb="Of the hands where you saw a flop, how often you reached showdown. Too high = calling down too much; too low = giving up too easily."
+                  />
+                  <Row
+                    label="Won at showdown (W$SD)"
+                    value={wsd == null ? "—" : fmtPct(wsd)}
+                    band="49–56%"
+                    blurb="When you did reach showdown, how often you won. Very high can ironically mean you only call when it's obvious — you might be folding too many winners."
+                  />
+                  <Row
+                    label="Aggression factor (AF)"
+                    value={af == null ? "—" : af.toFixed(1)}
+                    band="2.0–4.0"
+                    blurb="Your bets + raises divided by your calls, over coached decisions. Below ~1.5 means you call far more than you pressure — the most common beginner leak."
+                  />
+                  <p className="pt-2 text-[0.7rem] leading-relaxed text-faint">
+                    Small samples swing wildly — treat these as a mirror after a few hundred hands, not a
+                    verdict after ten.
+                  </p>
+                </div>
+              );
+            })()}
+          </Card>
+        </div>
+
         {/* Recent hands — replayable across restarts (SQLite/local) */}
         <Card className="mt-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text)]">

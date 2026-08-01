@@ -467,6 +467,7 @@ export const useGame = create<GameStore>((set, get) => {
           won,
           archetypes,
           position: nt.players[0].position,
+          sawFlop: nt.players[0].foldedStreet !== "preflop",
           handJson,
           ts: Date.now(),
         },
