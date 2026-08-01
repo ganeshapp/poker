@@ -24,7 +24,7 @@ Built by [Gapp](https://www.gapp.in).
   spots — pre-flop graded by GTO-derived charts, post-flop by pot-odds/equity), **Push/Fold**
   (short-stack Nash-style shove/call spots), and **My Leaks** (your own coach-flagged mistakes,
   re-served until you fix them).
-- **Study.** A 5-level, 26-lesson course (rules → position → ranges → outs/equity → pot-odds/EV →
+- **Study.** A 5-level, 31-lesson course (rules → position → ranges → outs/equity → pot-odds/EV →
   hand-reading → bet-sizing → implied odds → SPR → multiway) with interactive range, pot-odds, bluff
   and multiway-equity calculators, a **free-form equity calculator** (any range vs range on any board),
   a cheat sheet, a hover glossary, and optional quizzes.

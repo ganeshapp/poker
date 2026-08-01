@@ -595,6 +595,107 @@ export const LEVELS: Level[] = [
           </>
         ),
       },
+      {
+        id: "mdf",
+        title: "Minimum Defense Frequency",
+        minutes: 5,
+        body: () => (
+          <>
+            <Lead>
+              How often must you continue against a bet so opponents can't profit by bluffing you with
+              any two cards? That number is your minimum defense frequency (MDF).
+            </Lead>
+            <P>
+              A bluff risks the bet to win the pot. If you fold too often, ANY bluff shows a profit.
+              The break-even point:{" "}
+              <span className="mono text-gold-light">MDF = pot / (pot + bet)</span>. Against a half-pot
+              bet you must continue 10/(10+5) = 67% of the time; against a pot-sized bet, 50%.
+            </P>
+            <H>When to use MDF vs pot odds</H>
+            <P>
+              <b>Pot odds</b> answer "is THIS hand profitable to call?" — the right question against
+              players who rarely bluff. <b>MDF</b> answers "am I folding so much that bluffing me
+              prints money?" — the right question against aggressive players. Against the app's bots,
+              pot odds usually rule: a Nit's big bet is almost never a bluff, so "mathematically
+              exploitable" folding is actually correct against them.
+            </P>
+            <Callout title="Key idea">
+              MDF is a shield, not a hammer. Reach for it when someone is barreling relentlessly;
+              ignore it when the bettor is honest. Knowing WHICH question to ask is the skill.
+            </Callout>
+            <Quiz
+              questions={[
+                {
+                  q: "The pot is 12 bb and villain bets 6 bb (half pot). Roughly how often must you continue so they can't bluff any two cards profitably?",
+                  options: ["About 67%", "About 50%", "About 33%"],
+                  answer: 0,
+                  explain: "MDF = pot / (pot + bet) = 12 / 18 = 67%. Fold more than a third and any-two bluffs profit.",
+                },
+                {
+                  q: "A Calling Station almost never bluffs. Which number should drive your call/fold decision vs their river bet?",
+                  options: ["Pot odds (is my hand good often enough?)", "MDF (am I folding too much?)", "Neither — always call"],
+                  answer: 0,
+                  explain: "MDF protects you from bluffers. When there are no bluffs to defend against, just ask whether your hand beats their value range often enough for the price.",
+                },
+                {
+                  q: "Bigger bets mean your MDF…",
+                  options: ["goes down — you can fold more", "goes up — you must call more", "doesn't change"],
+                  answer: 0,
+                  explain: "MDF = pot/(pot+bet): as the bet grows the fraction shrinks. Big bets let you fold more; tiny bets demand wide defense.",
+                },
+              ]}
+            />
+          </>
+        ),
+      },
+      {
+        id: "check-raising",
+        title: "Check-Raising",
+        minutes: 5,
+        body: () => (
+          <>
+            <Lead>
+              Check with the intention of raising a bet — the strongest move you can make out of
+              position, and one this course's bots respect.
+            </Lead>
+            <P>
+              Out of position you act first, which is a disadvantage. The check-raise flips that: you
+              invite the in-position player's near-automatic continuation bet, then punish it. Your
+              check-raising range should be built from two ends: <b>big hands</b> (sets, two pair,
+              strong top pair on wet boards) that want a bigger pot, and <b>strong draws</b> (flush
+              draws, open-enders — often with 8+ outs) that profit from folds now and can still hit
+              when called.
+            </P>
+            <H>Where it works</H>
+            <P>
+              Best on boards that favor the checker's range — low, connected flops that miss the
+              raiser's big-card range. Size it meaningfully: around 3× their bet. Check-raising a dry
+              A-K-x flop where the opener has all the aces mostly just donates information.
+            </P>
+            <Callout title="Beware">
+              Never check-raising is itself a leak: it makes your checks an invitation to steal.
+              Against auto-c-bettors, adding check-raises with draws is often the single most
+              profitable adjustment.
+            </Callout>
+            <Quiz
+              questions={[
+                {
+                  q: "Which hand type makes the best check-raise BLUFF on a 8♠7♠3♦ flop?",
+                  options: ["A♠9♠ (flush draw + overcard)", "K♦Q♣ (two overcards, no draw)", "3♣3♥ (bottom set)"],
+                  answer: 0,
+                  explain: "A set is a value raise, not a bluff. The nut flush draw has huge equity when called AND wins outright when they fold — the perfect semi-bluff. KQ-high has too little to fall back on.",
+                },
+                {
+                  q: "Why is the check-raise strongest OUT of position?",
+                  options: ["It converts acting first into a trap for automatic c-bets", "It hides your hand for later streets", "It's cheaper than betting"],
+                  answer: 0,
+                  explain: "Acting first is normally a cost. Checking invites the c-bet, and the raise punishes it — position's disadvantage becomes bait.",
+                },
+              ]}
+            />
+          </>
+        ),
+      },
     ],
   },
   {
@@ -837,6 +938,150 @@ export const LEVELS: Level[] = [
                   options: ["Low SPR", "High SPR"],
                   answer: 0,
                   explain: "The bigger pre-flop pot relative to remaining stacks means a low SPR, so you commit lighter.",
+                },
+              ]}
+            />
+          </>
+        ),
+      },
+      {
+        id: "threebet-pots",
+        title: "Playing 3-Bet Pots",
+        minutes: 6,
+        body: () => (
+          <>
+            <Lead>
+              Re-raised pots are a different game: ranges are tighter, the pot is bigger relative to
+              stacks, and one bet can commit you.
+            </Lead>
+            <P>
+              After a 3-bet and call, the pot is ~20 bb with ~90 bb behind — an SPR around 4-5 instead
+              of 12+. That changes everything: <b>top pair good kicker becomes a stack-off hand</b>{" "}
+              where in a single-raised pot it's a pot-controller. Meanwhile hands that love deep stacks
+              (small pairs hunting sets, suited connectors) lose value — there isn't enough money
+              behind to pay off their big hits.
+            </P>
+            <H>Who has the range advantage?</H>
+            <P>
+              The 3-bettor's range is packed with big pairs and big cards, so A-high and K-high flops
+              favor them massively — c-bet small and often. Low connected flops hit the CALLER's pairs
+              and suited hands more; as the 3-bettor, slow down there. This "who does the flop help?"
+              question decides most 3-bet pots.
+            </P>
+            <Callout title="Key idea">
+              Before the flop comes down, know your plan: with QQ+ in a 3-bet pot at SPR 4, the answer
+              is usually "all the chips are going in". Deciding this early stops you from talking
+              yourself into a fold on a scary-looking turn.
+            </Callout>
+            <Quiz
+              questions={[
+                {
+                  q: "In a 3-bet pot at SPR ~4 you hold A♥K♦ and flop K♠8♦3♣. Your default plan is…",
+                  options: ["Value bet and be willing to stack off", "Check to keep the pot small", "Bet once, then give up unimproved"],
+                  answer: 0,
+                  explain: "Top pair top kicker at low SPR in a range-vs-range battle you're winning is a stack-off hand. Small pots are for single-raised, deep-stack situations.",
+                },
+                {
+                  q: "Which hand LOSES the most value moving from a single-raised pot to a 3-bet pot?",
+                  options: ["6♥6♣ (set mining)", "Q♥Q♦ (overpair potential)", "A♠K♠"],
+                  answer: 0,
+                  explain: "Set mining needs ~10x implied odds. In a 3-bet pot there isn't enough money behind relative to the price — small pairs hate re-raised pots.",
+                },
+              ]}
+            />
+          </>
+        ),
+      },
+      {
+        id: "equity-realization",
+        title: "Equity Realization",
+        minutes: 5,
+        body: () => (
+          <>
+            <Lead>
+              Raw equity is what your hand would win at showdown with no more betting. You never get
+              that — position and playability decide how much of it you actually collect.
+            </Lead>
+            <P>
+              9♠8♠ has ~38% equity against a big-card hand, but it <b>realizes</b> more than that in
+              position (you see cheap turns, bluff good rivers, fold before big mistakes) and less out
+              of position. As a rule: in position with a playable hand you realize 100%+ of raw equity;
+              out of position with a weak offsuit hand you might realize only 70-80%.
+            </P>
+            <H>What this changes</H>
+            <P>
+              It's the hidden reason behind chart shapes you've seen: suited and connected hands defend
+              wide IN POSITION; offsuit junk folds even at "correct" pot odds OUT of position. When the
+              coach says a call is marginal, ask: am I in position to realize my share? A break-even
+              call by raw equity is a losing call if you'll only realize 80% of it.
+            </P>
+            <Callout title="Rule of thumb">
+              Discount your equity ~10-20% when out of position with a hand that plays poorly
+              (offsuit, disconnected). Marginal calls need that margin.
+            </Callout>
+            <Quiz
+              questions={[
+                {
+                  q: "Which hand realizes its raw equity BEST?",
+                  options: ["T♠9♠ on the button", "T♠9♠ in the small blind", "K♣3♦ in the small blind"],
+                  answer: 0,
+                  explain: "Suited, connected, and in position: it sees cheap cards, wins extra pots with bluffs, and escapes cheaply when beaten. The same hand OOP realizes less; K3o OOP is the worst of all worlds.",
+                },
+                {
+                  q: "You're getting exactly break-even pot odds out of position with a weak offsuit hand. The call is…",
+                  options: ["A losing call — you won't realize full equity", "Exactly break-even", "Profitable — pot odds are all that matter"],
+                  answer: 0,
+                  explain: "Pot-odds math assumes you collect your full showdown equity. Out of position with a poorly-playing hand you won't — so break-even by the formula is losing in practice.",
+                },
+              ]}
+            />
+          </>
+        ),
+      },
+      {
+        id: "turn-river",
+        title: "Turn & River Play",
+        minutes: 6,
+        body: () => (
+          <>
+            <Lead>
+              Each street, ranges get narrower and equities move toward the extremes. By the river
+              there are no draws left — only value bets, bluffs, and bluff-catchers.
+            </Lead>
+            <H>The turn: the pressure street</H>
+            <P>
+              Calling the flop is cheap; calling the turn is not. Barrel turns that improve your range
+              or dent theirs (overcards to their pairs, completing YOUR draws). With one card to come,
+              draws are worth roughly <b>2% per out</b> — half their flop value — so the price to chase
+              gets worse exactly as the bets get bigger. That's why the coach's turn verdicts flip to
+              fold more often than beginners expect.
+            </P>
+            <H>The river: pure decisions</H>
+            <P>
+              River betting is binary: <b>value</b> (worse hands call) or <b>bluff</b> (better hands
+              fold). Before betting, name the actual hands that call you while losing — if you can't,
+              it isn't a value bet. Facing a bet, your hand is usually a bluff-catcher: it beats
+              bluffs, loses to value. Then the only question is "does this player bluff here often
+              enough?" — count the price (a pot-sized bet needs them bluffing 1 time in 3), then judge
+              the player.
+            </P>
+            <Callout title="Key idea">
+              "What am I trying to get called by / what am I trying to fold out?" If a river bet has
+              no answer to either question, check.
+            </Callout>
+            <Quiz
+              questions={[
+                {
+                  q: "You river a weak top pair. Villain (a Nit who never bluffs) bets pot. Your hand beats bluffs but loses to all their value hands. Call or fold?",
+                  options: ["Fold — no bluffs means no bluff-catching", "Call — you need to defend your MDF", "Raise as a bluff"],
+                  answer: 0,
+                  explain: "A bluff-catcher is only worth calling if there are bluffs to catch. Against a player who has them, the same call is fine — the player, not the formula, decides river calls.",
+                },
+                {
+                  q: "A flush draw (9 outs) on the TURN is worth roughly what equity?",
+                  options: ["~18% (2% per out)", "~36% (4% per out)", "~9%"],
+                  answer: 0,
+                  explain: "With one card to come it's ~2% per out. The 4% shortcut is for flop-to-river with both cards — a common and expensive mix-up.",
                 },
               ]}
             />

@@ -121,13 +121,9 @@ export function StudyView() {
               )}
             </Button>
             {nextId && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  complete(activeId);
-                  setActiveId(nextId);
-                }}
-              >
+              // Navigation only — completion is an explicit choice, so
+              // clicking through 26 lessons no longer "finishes" them.
+              <Button variant="outline" onClick={() => setActiveId(nextId)}>
                 Next lesson <Icon name="arrow-right" size={15} />
               </Button>
             )}
