@@ -37,6 +37,9 @@ const JUNK = new Set(["72o", "82o", "92o", "T2o", "J2o", "83o", "73o", "62o", "5
   let premiumFolds = 0;
   let junkBigCalls = 0;
   let decisions = 0;
+  let rangeExclusions = 0;
+  let postflopNarrowings = 0;
+  let postflopGrowths = 0;
   for (let h = 0; h < 1200; h++) {
     state = startHand(state);
     let guard = 0;
@@ -44,9 +47,9 @@ const JUNK = new Set(["72o", "82o", "92o", "T2o", "J2o", "83o", "73o", "62o", "5
       const seat = state.toAct;
       const p = state.players[seat];
       const dec = decideBot(state, seat);
-      if (state.street === "preflop" && p.hole) {
+      const label = p.hole ? cardsToLabel(p.hole[0], p.hole[1]) : null;
+      if (state.street === "preflop" && label) {
         decisions++;
-        const label = cardsToLabel(p.hole[0], p.hole[1]);
         const la = legalActions(state);
         if ((label === "AA" || label === "KK") && dec.action.type === "fold") {
           premiumFolds++;
@@ -57,6 +60,19 @@ const JUNK = new Set(["72o", "82o", "92o", "T2o", "J2o", "83o", "73o", "62o", "5
           if (junkBigCalls <= 3) console.error(`    ${p.archetype} called ${la.callAmount / BB}bb with ${label}`);
         }
       }
+      // Range-narrowing invariants (issue #10): the stored range always
+      // contains the bot's actual hand, and postflop actions shrink it.
+      if (dec.range != null && label && dec.action.type !== "fold") {
+        if (!dec.range.includes(label)) rangeExclusions++;
+        if (state.street !== "preflop") {
+          const before = state.botRanges[seat]?.length ?? 0;
+          if (before > 8 && dec.range.length < before) postflopNarrowings++;
+          else if (before > 8 && dec.range.length > before) postflopGrowths++;
+        }
+      }
+      if (dec.range != null) {
+        state = { ...state, botRanges: { ...state.botRanges, [seat]: dec.range } };
+      }
       state = applyAction(state, seat, dec.action);
     }
     ok(state.phase === "hand-over", "hand completes");
@@ -64,6 +80,9 @@ const JUNK = new Set(["72o", "82o", "92o", "T2o", "J2o", "83o", "73o", "62o", "5
   ok(decisions > 5000, `saw plenty of preflop decisions (${decisions})`);
   ok(premiumFolds === 0, `AA/KK never fold preflop (${premiumFolds} folds)`);
   ok(junkBigCalls === 0, `junk never calls a big raise (${junkBigCalls} calls)`);
+  ok(rangeExclusions === 0, `stored range never excludes the bot's actual hand (${rangeExclusions} exclusions)`);
+  ok(postflopNarrowings > 200, `postflop actions narrow ranges (${postflopNarrowings} narrowings)`);
+  ok(postflopGrowths === 0, `postflop ranges never grow (${postflopGrowths} growths)`);
 }
 
 /* ---------------- Run B: the open-jam exploit must lose now ---------------- */
