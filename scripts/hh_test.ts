@@ -50,7 +50,8 @@ const out = formatHand(hand);
 console.log(out);
 console.log("\n--- assertions ---");
 
-has(out, "PokerStars Hand #1: Hold'em No Limit (10/20)");
+// Globally unique, monotonic export id (not the session-local #1).
+has(out, `PokerStars Hand #${hand.startedAt * 100 + 1}: Hold'em No Limit (10/20)`);
 has(out, "Seat #1 is the button");
 has(out, "Ivey: posts small blind 10");
 has(out, "Polk: posts big blind 20");
@@ -64,10 +65,63 @@ has(out, "*** TURN *** [Ah Kd 7c] [2s]");
 has(out, "*** RIVER *** [Ah Kd 7c 2s] [9h]");
 has(out, "You: bets 120");
 has(out, "*** SHOW DOWN ***");
+has(out, "You: shows [As Ks] (two pair, Aces and Kings)");
+has(out, "Dwan: shows [Qh Qd] (a pair of Queens)");
+has(out, "You collected 520 from pot");
 has(out, "*** SUMMARY ***");
 has(out, "Total pot 520");
 has(out, "Board [Ah Kd 7c 2s 9h]");
-has(out, "You won (520)");
+has(out, "Seat 1: You (button) showed [As Ks] and won (520) with two pair, Aces and Kings");
+has(out, "Seat 4: Dwan showed [Qh Qd] and lost with a pair of Queens");
+has(out, "Seat 2: Ivey (small blind) folded before Flop");
+has(out, "Seat 3: Polk (big blind) folded before Flop");
+
+// Muck semantics: players who never reached showdown must not "show".
+const notHas = (text: string, needle: string) => {
+  if (!text.includes(needle)) passed++;
+  else {
+    failed++;
+    console.error("  UNEXPECTED:", JSON.stringify(needle));
+  }
+};
+notHas(out, "Ivey: shows");
+notHas(out, "Selbst: shows");
+
+// ---- Fold-out hand: uncalled bet returned, no fabricated showdown ----
+const foldout: HHHand = {
+  id: 2,
+  startedAt: hand.startedAt + 60_000,
+  button: 0,
+  sb: 10,
+  bb: 20,
+  sbSeat: 1,
+  bbSeat: 2,
+  seats: hand.seats,
+  holes: { 0: ["7h", "2c"], 3: ["Ac", "Ad"] },
+  actions: [
+    { street: "preflop", seat: 3, name: "Dwan", type: "raise", amount: 60, allIn: false },
+    { street: "preflop", seat: 4, name: "Selbst", type: "fold", amount: 0, allIn: false },
+    { street: "preflop", seat: 5, name: "Galfond", type: "fold", amount: 0, allIn: false },
+    { street: "preflop", seat: 0, name: "You", type: "fold", amount: 0, allIn: false },
+    { street: "preflop", seat: 1, name: "Ivey", type: "fold", amount: 0, allIn: false },
+    { street: "preflop", seat: 2, name: "Polk", type: "fold", amount: 0, allIn: false },
+  ],
+  board: [],
+  potResults: [{ winners: [3], amount: 90, potLabel: "Pot" }],
+  heroNet: 0,
+};
+const out2 = formatHand(foldout);
+console.log("\n" + out2);
+console.log("\n--- fold-out assertions ---");
+has(out2, `PokerStars Hand #${foldout.startedAt * 100 + 2}:`);
+has(out2, "Uncalled bet (40) returned to Dwan");
+has(out2, "Dwan collected 50 from pot");
+has(out2, "Total pot 50");
+has(out2, "Seat 4: Dwan collected (50)");
+has(out2, "Seat 1: You (button) folded before Flop");
+notHas(out2, "*** SHOW DOWN ***");
+notHas(out2, "Dwan: shows");
+notHas(out2, "Board [");
 
 // ---- Replay frames ----
 const ok = (cond: boolean, msg: string) => {

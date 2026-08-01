@@ -5,10 +5,11 @@ import { topPercentRange } from "./ranges.ts";
 import { equityVsRange, comboToInts } from "./equity.ts";
 
 /* ==================================================================
-   GTO Drills — procedural puzzle generator + heuristic grader.
+   Drills — procedural puzzle generator + heuristic grader.
 
    Preflop answers come from position-based opening/defending charts
-   (chart-GTO, authoritative). Postflop answers come from equity vs a
+   (heuristic top-% ranges — honest label, not GTO; real solver-derived
+   charts are issue #7). Postflop answers come from equity vs a
    plausible continuing range compared to pot odds (a fundamentals
    heuristic, not a solver). The UI labels which is which.
    ================================================================== */
@@ -143,7 +144,7 @@ function genRfi(): Puzzle {
     best,
     accept: [best],
     rationale: inRange
-      ? `${heroPos} opens about the top ${RFI_PCT[heroPos]}% of hands. ${label} is in that range, so the chart play is to raise (limping isn't part of a GTO opening strategy).`
+      ? `${heroPos} opens about the top ${RFI_PCT[heroPos]}% of hands. ${label} is in that range, so the chart play is to raise (limping isn't part of a solid opening strategy).`
       : `${heroPos} opens about the top ${RFI_PCT[heroPos]}% of hands. ${label} is below that, so fold — limping/calling here is −EV.`,
     difficulty: 1,
   };
@@ -391,7 +392,7 @@ export function generatePuzzle(): Puzzle {
   return genPostflopCheck();
 }
 
-/* ----------------------------- Push/Fold (Nash-style) ----------------------------- */
+/* ------------------- Push/Fold (simplified short-stack charts) ------------------- */
 
 const SHOVE_BASE: Partial<Record<Position, number>> = { UTG: 16, MP: 22, CO: 38, BTN: 55, SB: 50 };
 const CALL_BASE: Partial<Record<Position, number>> = { BTN: 38, CO: 30, SB: 42 };
@@ -440,7 +441,7 @@ export function generatePushFold(): Puzzle {
       ],
       best,
       accept: [best],
-      rationale: `~${stack} bb, folded to you in the ${heroPos}. A Nash-style open-shove range here is about the top ${pct}% of hands — ${label} is ${inRange ? "in it, so jam" : "outside it, so fold"}.`,
+      rationale: `~${stack} bb, folded to you in the ${heroPos}. A standard short-stack shove chart here plays about the top ${pct}% of hands — ${label} is ${inRange ? "in it, so jam" : "outside it, so fold"}.`,
       difficulty: 2,
     };
   }
@@ -476,7 +477,7 @@ export function generatePushFold(): Puzzle {
     ],
     best,
     accept: [best],
-    rationale: `Facing a ${stack} bb shove from the ${shoverPos}. A Nash-style calling range is about the top ${pct}% — ${label} ${inRange ? "is a call" : "is a fold"}.`,
+    rationale: `Facing a ${stack} bb shove from the ${shoverPos}. A standard short-stack calling chart is about the top ${pct}% — ${label} ${inRange ? "is a call" : "is a fold"}.`,
     difficulty: 2,
   };
 }
