@@ -3,6 +3,7 @@ import { applyAction, createTable, legalActions, startHand } from "@/game/engine
 import { decideBot } from "@/game/botBrain";
 import { engine as math } from "@/engine/engineClient";
 import { hashSeed } from "@/engine/equity";
+import { fmtBb, fmtNeed, fmtTimes } from "@/lib/format";
 import { ARCHETYPES } from "@/game/archetypes";
 import { buildPreflopRanges } from "@/engine/ranges";
 import { combosInSet, comboCount, cardsToLabel } from "@/engine/notation";
@@ -36,8 +37,14 @@ export interface CoachReview {
   villainArchetype?: Archetype;
   villainRange?: HandLabel[];
   board: Card[];
+  /** Layer 1 (TONE.md): plain English, no jargon, chances as counts. */
+  plain?: string;
+  /** Layer 2 summary line (may use poker terms). */
   text: string;
+  /** Layer 2: the step-by-step derivation. */
   steps?: string[];
+  /** Layer 3: ranges, precision, formulas, methodology. */
+  expert?: string[];
   opponents?: number;
   multiway?: boolean;
 }
@@ -243,14 +250,14 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
       equity,
       potOdds,
       evChips: evCall,
+      plain: `You folded a moneymaker. Calling ${fmtBb(cost, bb)} bb to win a ${fmtBb(finalPot, bb)} bb pot only needs a win ${fmtNeed(potOdds)} — and your hand wins ${fmtTimes(equity)}. That call was worth about +${(evCall / bb).toFixed(1)} bb.`,
       text: `Against ${oppDesc} your ${heroLabel} has ${pct}% equity and you're getting ${Math.round(potOdds * 100)}% pot odds — calling is worth about +${(evCall / bb).toFixed(1)} bb.`,
       steps: [
-        sourceLine,
         `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity.`,
         `Pot ${state.pot} + call ${cost} = ${finalPot}; pot odds = ${Math.round(potOdds * 100)}%.`,
         `EV(call) = ${pct}% × ${finalPot} − ${cost} ≈ +${evCall.toFixed(0)} chips (${(evCall / bb).toFixed(1)} bb) > EV(fold)=0.`,
-        marginNote,
       ],
+      expert: [sourceLine, marginNote],
     };
   }
 
@@ -263,21 +270,27 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
     let verdict: Verdict;
     let blocking = false;
     let text: string;
+    let plain: string;
+    const priceLine = `You paid ${fmtBb(cost, bb)} bb to win a pot of ${fmtBb(finalPot, bb)} bb — you need to win ${fmtNeed(potOdds)}.`;
     // A "mistake" needs the call to lose money even at the optimistic
     // edge of the estimate; inside the noise band it's just "close".
     const evActionHigh = (equity + margin) * finalPot - cost;
     if (evAction < -0.3 * bb && evActionHigh < 0) {
       verdict = "mistake";
       blocking = true;
+      plain = `${priceLine} Your hand wins ${fmtTimes(equity)} — not enough. Over time this call loses money; folding is better.`;
       text = `Against ${oppDesc} your ${heroLabel} has only ${pct}% equity, but calling needs ${Math.round(potOdds * 100)}%. This call costs about ${(evAction / bb).toFixed(1)} bb — folding is better.`;
     } else if (evAction < -0.3 * bb) {
       verdict = "thin";
+      plain = `Genuinely too close to call: the numbers say roughly break-even here. Either choice is fine.`;
       text = `Looks slightly losing (~${(evAction / bb).toFixed(1)} bb), but it's within the simulation's margin of error — either choice is reasonable here.`;
     } else if (equity < potOdds + 0.04) {
       verdict = "thin";
+      plain = `${priceLine} Your hand wins ${fmtTimes(equity)} — just barely enough. A close call, not a mistake.`;
       text = `${pct}% equity vs ~${Math.round(potOdds * 100)}% needed — a marginal, close call against ${oppDesc}.`;
     } else {
       verdict = equity > 0.7 ? "great" : "ok";
+      plain = `${priceLine} Your hand wins ${fmtTimes(equity)} — comfortably more than you need. Good call.`;
       text = `${pct}% equity vs ${oppDesc}, needing ${Math.round(potOdds * 100)}% — a clear call worth +${(evAction / bb).toFixed(1)} bb.`;
     }
     return {
@@ -288,28 +301,32 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
       equity,
       potOdds,
       evChips: evAction,
+      plain,
       text,
       steps: [
-        sourceLine,
         `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity.`,
         `Pot ${state.pot} + your call ${cost} = ${finalPot}; pot odds = ${cost}/${finalPot} = ${Math.round(potOdds * 100)}%.`,
         `EV(call) = ${pct}% × ${finalPot} − ${cost} ≈ ${evAction.toFixed(0)} chips (${(evAction / bb).toFixed(1)} bb). EV(fold) = 0.`,
         evAction < 0 ? `Because EV < 0, folding is the higher-EV play.` : `Because EV > 0, calling beats folding.`,
-        marginNote,
       ],
+      expert: [sourceLine, marginNote],
     };
   }
 
   // bet / raise
   let verdict: Verdict = "ok";
   let text: string;
+  let plain: string;
   if (equity > 0.6) {
     verdict = "great";
+    plain = `Betting with the goods: if someone calls, your hand wins ${fmtTimes(equity)}. Money goes in with the best of it — and every fold is profit too.`;
     text = `Strong value — ${pct}% equity vs ${oppDesc}. Betting is correct.`;
   } else if (equity < 0.38 && cost > state.pot * 0.5) {
     verdict = "thin";
+    plain = `This is a bluff: if you get called, your hand only wins ${fmtTimes(equity)}. The bet makes money only when opponents fold — fine as a plan, just know that's the plan.`;
     text = `Aggressive: only ${pct}% equity if called. Works as a bluff but relies on folds.`;
   } else {
+    plain = `A solid bet: when called, your hand wins ${fmtTimes(equity)}, and every fold you pick up is pure profit on top.`;
     text = `${pct}% equity vs ${oppDesc} — a reasonable bet mixing value and fold equity.`;
   }
   return {
@@ -320,13 +337,13 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
     equity,
     potOdds,
     evChips: evAction,
+    plain,
     text,
     steps: [
-      sourceLine,
       `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity when called.`,
       `A bet also wins when opponents fold — fold equity isn't shown here, so treat this as the "called" floor.`,
-      marginNote,
     ],
+    expert: [sourceLine, marginNote],
   };
 }
 

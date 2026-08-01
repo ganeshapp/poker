@@ -3,6 +3,7 @@ import { useGame, type Verdict } from "@/store/gameStore";
 import { fmtSigned } from "@/lib/format";
 import { Button } from "@/components/ui/controls";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 const META: Record<Verdict, { label: string; color: string; icon: IconName }> = {
   mistake: { label: "Mistake", color: "var(--bad)", icon: "x" },
@@ -20,6 +21,7 @@ export function EVCoachPanel() {
   const openRangeView = useGame((s) => s.openRangeView);
   const bb = useGame((s) => s.table.bigBlind);
   const [showMath, setShowMath] = useState(false);
+  const [showExpert, setShowExpert] = useState(false);
 
   const review = reviewLog.find((r) => r.id === activeReviewId) ?? null;
 
@@ -67,12 +69,25 @@ export function EVCoachPanel() {
         </div>
 
         <div className="space-y-3 p-4">
+          {/* Layer 1: plain English, always first (TONE.md) */}
+          <p className="text-[0.84rem] leading-relaxed text-[var(--text)]">{review.plain ?? review.text}</p>
+
           {equityPct != null && (
             <div>
               <div className="mb-1 flex justify-between text-[0.7rem]">
-                <span className="text-muted">
-                  Equity vs <span className="text-[var(--text)]">{review.villainName}</span>
-                </span>
+                <Tooltip
+                  content={
+                    <span>
+                      <span className="font-semibold text-gold-light">Win chance (equity)</span> — how
+                      often your hand ends up best if the rest of the cards were dealt out with nobody
+                      folding.
+                    </span>
+                  }
+                >
+                  <span className="cursor-help border-b border-dotted border-[var(--line-strong)] text-muted">
+                    Win chance vs <span className="text-[var(--text)]">{review.villainName}</span>
+                  </span>
+                </Tooltip>
                 <span className="mono font-semibold" style={{ color: meta.color }}>
                   {equityPct}%
                 </span>
@@ -84,19 +99,31 @@ export function EVCoachPanel() {
                 )}
               </div>
               {oddsPct != null && oddsPct > 0 && (
-                <div className="mt-1 text-[0.66rem] text-faint">White line = {oddsPct}% needed (pot odds)</div>
+                <div className="mt-1 text-[0.66rem] text-faint">
+                  White line = {oddsPct}% needed{" "}
+                  <Tooltip
+                    content={
+                      <span>
+                        <span className="font-semibold text-gold-light">Pot odds</span> — the share of
+                        the final pot your call pays for. Win more often than this and the call makes
+                        money.
+                      </span>
+                    }
+                  >
+                    <span className="cursor-help border-b border-dotted border-[var(--line-strong)]">(pot odds)</span>
+                  </Tooltip>
+                </div>
               )}
             </div>
           )}
-
-          <p className="text-[0.82rem] leading-relaxed text-[var(--text)]">{review.text}</p>
 
           {review.multiway && (
             <div className="flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-[0.74rem] leading-relaxed text-warn">
               <Icon name="info" size={14} className="mt-0.5 shrink-0" />
               <span>
-                Multiway pot ({review.opponents} opponents). Equity is computed against the whole field as
-                random hands — more realistic than heads-up, and a reason to keep continuing ranges tight.
+                Multiway pot ({review.opponents} opponents). With more players someone hits the board
+                more often, so you need a stronger hand to continue. The numbers here are a rough
+                estimate against random hands — treat close verdicts loosely.
               </span>
             </div>
           )}
@@ -108,7 +135,7 @@ export function EVCoachPanel() {
                 className="flex items-center gap-1 text-[0.72rem] font-semibold text-gold hover:text-gold-light"
               >
                 <Icon name="chevron-right" size={13} className={showMath ? "rotate-90 transition" : "transition"} />
-                {showMath ? "Hide the math" : "Show the math"}
+                {showMath ? "Hide the math" : "Show me the math"}
               </button>
               {showMath && (
                 <ol className="mt-2 space-y-1.5 border-l border-[var(--line)] pl-3">
@@ -119,6 +146,28 @@ export function EVCoachPanel() {
                     </li>
                   ))}
                 </ol>
+              )}
+            </div>
+          )}
+
+          {((review.expert && review.expert.length > 0) || review.plain) && (
+            <div>
+              <button
+                onClick={() => setShowExpert((v) => !v)}
+                className="flex items-center gap-1 text-[0.72rem] font-semibold text-muted hover:text-[var(--text)]"
+              >
+                <Icon name="chevron-right" size={13} className={showExpert ? "rotate-90 transition" : "transition"} />
+                {showExpert ? "Hide expert detail" : "Expert detail"}
+              </button>
+              {showExpert && (
+                <ul className="mt-2 space-y-1.5 border-l border-[var(--line)] pl-3">
+                  {review.plain && <li className="text-[0.74rem] leading-relaxed text-muted">{review.text}</li>}
+                  {(review.expert ?? []).map((s, i) => (
+                    <li key={i} className="text-[0.74rem] leading-relaxed text-muted">
+                      {s}
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           )}
