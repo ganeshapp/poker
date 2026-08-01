@@ -7,7 +7,6 @@ import { fmtPct } from "@/lib/format";
 import { Modal } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
-import { PlayingCard } from "@/components/table/PlayingCard";
 import { RangeMatrix, RangeLegend } from "./RangeMatrix";
 
 function grade(acc: number): { label: string; color: string } {
@@ -101,13 +100,9 @@ export function GuessModal() {
               </div>
             )}
             <div className="flex items-center gap-3">
-              <div className="text-right text-[0.72rem] text-muted">Actually held</div>
-              {guess.botHole && (
-                <div className="flex gap-1">
-                  <PlayingCard card={guess.botHole[0]} w={40} />
-                  <PlayingCard card={guess.botHole[1]} w={40} />
-                </div>
-              )}
+              <div className="max-w-[180px] text-right text-[0.72rem] text-muted">
+                Everyone's exact cards are revealed when the hand ends.
+              </div>
               <Button onClick={closeGuess}>Continue</Button>
             </div>
           </div>

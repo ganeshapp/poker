@@ -211,7 +211,6 @@ export function buildReplayFrames(h: HHHand): ReplayFrame[] {
   const winnerIds = [...new Set(h.potResults.flatMap((p) => p.winners))];
   const names = winnerIds.map((id) => h.seats.find((s) => s.seat === id)?.name ?? `Seat ${id + 1}`);
   const total = h.potResults.reduce((a, b) => a + b.amount, 0);
-  const showdown = h.board.length === 5 && h.seats.length - folded.length > 1;
   const endStreet: Street =
     h.board.length >= 5 ? "showdown" : h.board.length === 4 ? "turn" : h.board.length === 3 ? "flop" : "preflop";
   frames.push({
@@ -220,7 +219,7 @@ export function buildReplayFrames(h: HHHand): ReplayFrame[] {
     board: [...h.board],
     pot,
     folded: [...folded],
-    revealAll: showdown,
+    revealAll: true,
   });
 
   return frames;

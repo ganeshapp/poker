@@ -45,7 +45,7 @@ export function HandReplayModal({ hand, onClose }: { hand: HHHand | null; onClos
         {ordered.map((s, i) => {
           const folded = frame.folded.includes(s.seat);
           const hole = hand.holes[s.seat];
-          const showHole = hole && (s.isHero || (frame.revealAll && !folded));
+          const showHole = hole && (s.isHero || frame.revealAll);
           return (
             <div
               key={s.seat}

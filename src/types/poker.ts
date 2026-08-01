@@ -94,8 +94,10 @@ export interface Player {
   archetype?: Archetype;
   stack: number;
   hole: [Card, Card] | null;
-  /** Cards revealed at showdown (for bots). */
+  /** Cards revealed — at showdown, or the end-of-hand learning reveal. */
   revealed: boolean;
+  /** Street this player folded on (unset while still in the hand). */
+  foldedStreet?: Street;
   hasFolded: boolean;
   isAllIn: boolean;
   /** Chips committed on the current street. */

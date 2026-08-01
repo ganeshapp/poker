@@ -138,6 +138,7 @@ export function startHand(prev: GameState): GameState {
     p.hole = null;
     p.revealed = false;
     p.hasFolded = false;
+    p.foldedStreet = undefined;
     p.isAllIn = false;
     p.committed = 0;
     p.committedTotal = 0;
@@ -240,6 +241,7 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
   switch (action.type) {
     case "fold": {
       p.hasFolded = true;
+      p.foldedStreet = s.street;
       p.acted = true;
       p.lastAction = { label: "Fold", street: s.street };
       pushLog(s, s.street, `${p.name} folds`, "action");
@@ -390,13 +392,16 @@ function settleByFold(s: GameState, winnerId: number) {
     heroNetChips: s.players[0].stack - s.stacksAtStart[0],
   };
   pushLog(s, s.street, `${w.name} wins ${amount} (uncontested)`, "result");
+  // Learning reveal: at hand end every dealt hand is shown, folds included.
+  for (const p of s.players) if (p.hole) p.revealed = true;
   s.toAct = null;
   s.phase = "hand-over";
 }
 
 function settleShowdown(s: GameState) {
   const liveIds = s.players.filter((p) => !p.hasFolded).map((p) => p.id);
-  for (const id of liveIds) s.players[id].revealed = true;
+  // Learning reveal: at hand end every dealt hand is shown, folds included.
+  for (const p of s.players) if (p.hole) p.revealed = true;
 
   const evals: Record<number, EvaluatedHand> = {};
   for (const id of liveIds) {
