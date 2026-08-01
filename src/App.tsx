@@ -10,6 +10,7 @@ import { StatsView } from "@/views/StatsView";
 import { AboutView } from "@/views/AboutView";
 import { useTheme } from "@/store/themeStore";
 import { ShortcutOverlay } from "@/components/ui/ShortcutOverlay";
+import { OnboardingModal } from "@/components/ui/OnboardingModal";
 import { cx } from "@/lib/cx";
 
 const NAV: { id: Tab; label: string; icon: IconName }[] = [
@@ -86,6 +87,7 @@ export default function App() {
       </main>
 
       <ShortcutOverlay />
+      <OnboardingModal />
     </div>
   );
 }

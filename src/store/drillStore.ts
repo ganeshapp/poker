@@ -108,6 +108,8 @@ interface DrillState extends Persisted {
   focusLeft: number;
   answer: (a: DrillAction) => void;
   next: () => void;
+  /** Placement-test seeding of the starting rating. */
+  seedRating: (rating: number) => void;
   drillSimilar: () => void;
   setMode: (m: DrillMode) => void;
   setNav: (i: number) => void;
@@ -191,6 +193,13 @@ export const useDrills = create<DrillState>((set, get) => {
         focusLeft,
         focusKind: focusLeft > 0 ? st.focusKind : null,
       });
+    },
+
+    seedRating: (rating) => {
+      const st = get();
+      const next = { rating, solved: st.solved, correct: st.correct, streak: st.streak, best: st.best };
+      save(next);
+      set({ rating });
     },
 
     drillSimilar: () => {
