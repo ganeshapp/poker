@@ -9,6 +9,7 @@ import {
   type Puzzle,
 } from "@/engine/puzzles";
 import { useLeaks } from "./leakStore";
+import { useReview } from "./reviewStore";
 import type { PuzzleKind } from "@/engine/puzzles";
 
 export type DrillMode = "mixed" | "pushfold" | "leaks";
@@ -41,13 +42,25 @@ function save(p: Persisted) {
   }
 }
 
-function genFor(mode: DrillMode, focusKind: PuzzleKind | null = null): { puzzle: Puzzle | null; leakId: string | null } {
+function genFor(
+  mode: DrillMode,
+  focusKind: PuzzleKind | null = null,
+): { puzzle: Puzzle | null; leakId: string | null; reviewId?: string | null } {
   if (mode === "pushfold") return { puzzle: generatePushFold(), leakId: null };
   if (mode === "leaks") {
-    const spots = useLeaks.getState().spots;
-    if (!spots.length) return { puzzle: null, leakId: null };
-    const s = spots[(Math.random() * spots.length) | 0];
-    return { puzzle: puzzleFromLeak(s), leakId: s.id };
+    // The Review queue: due coach-flagged leaks + due missed drills.
+    const now = Date.now();
+    const dueLeaks = useLeaks.getState().dueSpots(now);
+    const dueCards = useReview.getState().dueCards(now);
+    const total = dueLeaks.length + dueCards.length;
+    if (!total) return { puzzle: null, leakId: null, reviewId: null };
+    const pick = (Math.random() * total) | 0;
+    if (pick < dueLeaks.length) {
+      const s = dueLeaks[pick];
+      return { puzzle: puzzleFromLeak(s), leakId: s.id, reviewId: null };
+    }
+    const c = dueCards[pick - dueLeaks.length];
+    return { puzzle: c.puzzle, leakId: null, reviewId: c.id };
   }
   if (focusKind) {
     // "Drill similar": keep dealing until the same spot family shows up.
@@ -63,6 +76,7 @@ interface DrillState extends Persisted {
   mode: DrillMode;
   puzzle: Puzzle;
   currentLeakId: string | null;
+  currentReviewId: string | null;
   navIndex: number;
   answered: DrillAction | null;
   result: GradeResult | null;
@@ -85,6 +99,7 @@ export const useDrills = create<DrillState>((set, get) => {
     mode: "mixed",
     puzzle: first,
     currentLeakId: null,
+    currentReviewId: null,
     navIndex: first.frames.length - 1,
     answered: null,
     result: null,
@@ -97,12 +112,17 @@ export const useDrills = create<DrillState>((set, get) => {
       if (s.answered) return;
       const res = gradePuzzle(s.puzzle, a);
 
-      // Leak-review mode: don't touch rating; clear the leak when solved.
+      // Review mode: apply spaced-repetition scheduling; a card only
+      // retires after repeated spaced successes. Rating untouched.
       if (s.mode === "leaks") {
-        if (res.correct && s.currentLeakId) useLeaks.getState().resolve(s.currentLeakId);
+        if (s.currentLeakId) useLeaks.getState().review(s.currentLeakId, res.correct);
+        if (s.currentReviewId) useReview.getState().review(s.currentReviewId, res.correct);
         set({ answered: a, result: res, ratingDelta: 0, navIndex: s.puzzle.frames.length - 1 });
         return;
       }
+
+      // Missed practice drills join the review queue.
+      if (!res.correct && s.puzzle.kind !== "leak") useReview.getState().addMiss(s.puzzle);
 
       const d = s.puzzle.difficulty;
       const delta = res.correct ? 8 + d * 4 : -(6 + d * 2);
@@ -128,15 +148,16 @@ export const useDrills = create<DrillState>((set, get) => {
     next: () => {
       const st = get();
       const focus = st.focusLeft > 0 ? st.focusKind : null;
-      const { puzzle, leakId } = genFor(st.mode, focus);
+      const { puzzle, leakId, reviewId } = genFor(st.mode, focus);
       if (!puzzle) {
-        set({ answered: null, result: null, ratingDelta: 0, currentLeakId: null });
+        set({ answered: null, result: null, ratingDelta: 0, currentLeakId: null, currentReviewId: null });
         return;
       }
       const focusLeft = focus ? st.focusLeft - 1 : 0;
       set({
         puzzle,
         currentLeakId: leakId,
+        currentReviewId: reviewId ?? null,
         navIndex: puzzle.frames.length - 1,
         answered: null,
         result: null,
@@ -155,14 +176,15 @@ export const useDrills = create<DrillState>((set, get) => {
 
     setMode: (m) => {
       set({ mode: m });
-      const { puzzle, leakId } = genFor(m);
+      const { puzzle, leakId, reviewId } = genFor(m);
       if (!puzzle) {
-        set({ answered: null, result: null, currentLeakId: null });
+        set({ answered: null, result: null, currentLeakId: null, currentReviewId: null });
         return;
       }
       set({
         puzzle,
         currentLeakId: leakId,
+        currentReviewId: reviewId ?? null,
         navIndex: puzzle.frames.length - 1,
         answered: null,
         result: null,

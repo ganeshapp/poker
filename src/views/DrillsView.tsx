@@ -1,5 +1,6 @@
 import { useDrills, type DrillMode } from "@/store/drillStore";
 import { useLeaks } from "@/store/leakStore";
+import { useReview } from "@/store/reviewStore";
 import { DrillTable } from "@/components/drills/DrillTable";
 import { MoveNavigator } from "@/components/drills/MoveNavigator";
 import { DrillControls } from "@/components/drills/DrillControls";
@@ -10,7 +11,7 @@ import { cx } from "@/lib/cx";
 const MODE_INFO: Record<DrillMode, { label: string; blurb: string }> = {
   mixed: { label: "Mixed", blurb: "Pre-flop charts + post-flop pot-odds/equity. Opponent type is irrelevant — play solid baseline poker." },
   pushfold: { label: "Push / Fold", blurb: "Short-stack shove/fold and call-a-shove spots, graded by computed Nash equilibrium tables (chip-EV, no antes)." },
-  leaks: { label: "My Leaks", blurb: "Your coach-flagged −EV decisions, re-served until you get them right." },
+  leaks: { label: "Review", blurb: "Your coach-flagged leaks and missed drills on a spaced schedule — beat a spot 3 times over days to retire it." },
 };
 
 export function DrillsView() {
@@ -21,9 +22,15 @@ export function DrillsView() {
   const best = useDrills((s) => s.best);
   const mode = useDrills((s) => s.mode);
   const setMode = useDrills((s) => s.setMode);
-  const leakCount = useLeaks((s) => s.spots.length);
+  const leakSpots = useLeaks((s) => s.spots);
+  const reviewCards = useReview((s) => s.cards);
+  const now = Date.now();
+  const dueCount =
+    leakSpots.filter((sp) => !sp.srs || sp.srs.due <= now).length +
+    reviewCards.filter((c) => c.srs.due <= now).length;
+  const totalCards = leakSpots.length + reviewCards.length;
   const acc = solved > 0 ? Math.round((correct / solved) * 100) : 0;
-  const emptyLeaks = mode === "leaks" && leakCount === 0;
+  const emptyLeaks = mode === "leaks" && dueCount === 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -58,7 +65,7 @@ export function DrillsView() {
               )}
             >
               {MODE_INFO[m].label}
-              {m === "leaks" && leakCount > 0 ? ` (${leakCount})` : ""}
+              {m === "leaks" && dueCount > 0 ? ` (${dueCount} due)` : ""}
             </button>
           ))}
         </div>
@@ -70,10 +77,13 @@ export function DrillsView() {
             <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-good/15 text-good">
               <Icon name="check" size={24} />
             </div>
-            <h2 className="font-display text-xl font-bold text-[var(--text)]">No leaks to drill</h2>
+            <h2 className="font-display text-xl font-bold text-[var(--text)]">
+              {totalCards > 0 ? "Nothing due right now" : "No spots to review yet"}
+            </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              Play a session with the EV Coach on. Any clear −EV decision it flags is saved here, so you
-              can re-drill your own mistakes until they're automatic.
+              {totalCards > 0
+                ? `All ${totalCards} of your review spots are scheduled for later — spaced practice sticks best when you come back to it. Play or drill in the meantime.`
+                : "Play a session with the EV Coach on, or miss a practice drill, and the spot lands here on a spaced-repetition schedule until you've beaten it three times."}
             </p>
           </div>
         </div>
