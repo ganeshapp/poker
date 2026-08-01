@@ -9,7 +9,7 @@ import { cx } from "@/lib/cx";
 
 const MODE_INFO: Record<DrillMode, { label: string; blurb: string }> = {
   mixed: { label: "Mixed", blurb: "Pre-flop charts + post-flop pot-odds/equity. Opponent type is irrelevant — play solid baseline poker." },
-  pushfold: { label: "Push / Fold", blurb: "Short-stack shove/fold and call-a-shove spots, graded by simplified short-stack charts." },
+  pushfold: { label: "Push / Fold", blurb: "Short-stack shove/fold and call-a-shove spots, graded by computed Nash equilibrium tables (chip-EV, no antes)." },
   leaks: { label: "My Leaks", blurb: "Your coach-flagged −EV decisions, re-served until you get them right." },
 };
 

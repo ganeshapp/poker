@@ -37,7 +37,7 @@ export function DrillControls() {
     puzzle.kind === "leak"
       ? "Your flagged spot"
       : puzzle.kind === "pushfold"
-        ? "Push/Fold · short-stack chart"
+        ? "Push/Fold · computed Nash"
         : puzzle.source === "chart"
           ? "Pre-flop chart · heuristic"
           : "Post-flop heuristic · fundamentals";
