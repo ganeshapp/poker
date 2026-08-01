@@ -5,9 +5,8 @@ import { Button } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
 import { PlayingCard } from "@/components/table/PlayingCard";
 import { evaluateCards } from "@/engine/evaluator";
-import { buildPreflopRanges } from "@/engine/ranges";
 import { cardsToLabel } from "@/engine/notation";
-import { ARCHETYPES } from "@/game/archetypes";
+import { PREFLOP_100 } from "@/data/preflop";
 import { cx } from "@/lib/cx";
 
 const FOLD_PHRASE: Record<Street, string> = {
@@ -32,11 +31,14 @@ function revealNote(p: Player, board: Card[], summary: HandSummary): string {
 
   const base = `Folded ${FOLD_PHRASE[p.foldedStreet ?? "preflop"]}`;
   if ((p.foldedStreet ?? "preflop") === "preflop") {
-    if (p.archetype && p.hole) {
-      const cfg = ARCHETYPES[p.archetype];
-      const inRange = buildPreflopRanges(cfg.vpip, cfg.pfr, p.position).play.has(
-        cardsToLabel(p.hole[0], p.hole[1]),
-      );
+    if (p.hole) {
+      const label = cardsToLabel(p.hole[0], p.hole[1]);
+      // BB never folds unopened pots, so a BB preflop fold faced a raise.
+      const chart =
+        p.position === "BB"
+          ? { ...PREFLOP_100.vsRfi.BB_vs_BTN.call, ...PREFLOP_100.vsRfi.BB_vs_BTN.threebet }
+          : PREFLOP_100.rfi[p.position];
+      const inRange = ((chart ?? {})[label] ?? 0) > 0;
       return inRange ? `${base} — playable, but gave it up.` : `${base} — too weak to play from ${p.position}.`;
     }
     return `${base}.`;
