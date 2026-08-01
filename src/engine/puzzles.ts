@@ -658,8 +658,21 @@ export interface GradeResult {
   best: DrillAction;
   accept: DrillAction[];
   rationale: string;
+  /** How much the chosen action costs vs the best line, in bb —
+      computable for pot-odds spots; undefined for chart spots. */
+  evLossBb?: number;
 }
 
 export function gradePuzzle(p: Puzzle, action: DrillAction): GradeResult {
-  return { correct: p.accept.includes(action), best: p.best, accept: p.accept, rationale: p.rationale };
+  const correct = p.accept.includes(action);
+  let evLossBb: number | undefined;
+  if (!correct && p.equity !== undefined && p.toCall > 0) {
+    // Two-option EV: calling wins equity×finalPot − cost; folding is 0.
+    const evCall = p.equity * (p.pot + p.toCall) - p.toCall;
+    const evOf = (a: DrillAction) => (a === "fold" ? 0 : a === "call" ? evCall : undefined);
+    const chosen = evOf(action);
+    const best = evOf(p.best);
+    if (chosen !== undefined && best !== undefined) evLossBb = Math.max(0, best - chosen);
+  }
+  return { correct, best: p.best, accept: p.accept, rationale: p.rationale, evLossBb };
 }

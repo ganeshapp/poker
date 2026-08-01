@@ -68,8 +68,29 @@ function genFor(
       const p = generatePuzzle();
       if (p.kind === focusKind) return { puzzle: p, leakId: null };
     }
+    return { puzzle: generatePuzzle(), leakId: null };
   }
-  return { puzzle: generatePuzzle(), leakId: null };
+  return { puzzle: adaptivePuzzle(ratingFor()), leakId: null };
+}
+
+function ratingFor(): number {
+  try {
+    return useDrills.getState().rating;
+  } catch {
+    return 1000;
+  }
+}
+
+/** Adaptive difficulty: serve spots near the edge of the user's
+    rating — strong players mostly see close (difficulty-3) spots,
+    beginners mostly clear ones. */
+function adaptivePuzzle(rating: number): Puzzle {
+  const target = rating < 1050 ? (Math.random() < 0.7 ? 1 : 2) : rating < 1250 ? (Math.random() < 0.55 ? 2 : Math.random() < 0.5 ? 1 : 3) : Math.random() < 0.6 ? 3 : 2;
+  for (let i = 0; i < 25; i++) {
+    const p = generatePuzzle();
+    if (p.difficulty === target) return p;
+  }
+  return generatePuzzle();
 }
 
 interface DrillState extends Persisted {
@@ -124,8 +145,11 @@ export const useDrills = create<DrillState>((set, get) => {
       // Missed practice drills join the review queue.
       if (!res.correct && s.puzzle.kind !== "leak") useReview.getState().addMiss(s.puzzle);
 
-      const d = s.puzzle.difficulty;
-      const delta = res.correct ? 8 + d * 4 : -(6 + d * 2);
+      // Real Elo: expected score vs the puzzle's implied rating, so the
+      // number converges to skill instead of counting volume.
+      const puzzleRating = 800 + s.puzzle.difficulty * 200;
+      const expected = 1 / (1 + 10 ** ((puzzleRating - s.rating) / 400));
+      const delta = Math.round(24 * ((res.correct ? 1 : 0) - expected));
       const rating = Math.max(100, Math.round(s.rating + delta));
       const streak = res.correct ? s.streak + 1 : 0;
       const best = Math.max(s.best, streak);
