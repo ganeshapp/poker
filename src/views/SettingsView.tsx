@@ -152,6 +152,21 @@ export function SettingsView() {
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-gold">
             <Icon name="bolt" size={15} /> Keyboard
           </div>
+          <Row title="Tour & placement" desc="Re-run the first-launch tour and the placement quiz (recalibrates your drill rating).">
+            <button
+              onClick={() => {
+                try {
+                  localStorage.removeItem("allin.onboarded.v1");
+                } catch {
+                  /* ignore */
+                }
+                window.location.reload();
+              }}
+              className="rounded-lg border border-[var(--line)] bg-ink-700 px-3 py-1.5 text-[0.78rem] font-semibold text-[var(--text)] transition hover:bg-ink-600"
+            >
+              Run again
+            </button>
+          </Row>
           <Row title="Shortcuts" desc="Play and drill without touching the mouse. F fold · C check/call · R raise · 1/2/3 drill answers · Enter next.">
             <button
               onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }))}
