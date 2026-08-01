@@ -40,13 +40,27 @@ const JUNK = new Set(["72o", "82o", "92o", "T2o", "J2o", "83o", "73o", "62o", "5
   let rangeExclusions = 0;
   let postflopNarrowings = 0;
   let postflopGrowths = 0;
+  let checkRaises = 0;
+  const sizings = new Set<string>();
+  let checkedThisStreet: Record<string, Set<number>> = {};
   for (let h = 0; h < 1200; h++) {
     state = startHand(state);
+    checkedThisStreet = {};
     let guard = 0;
     while (state.phase === "betting" && state.toAct !== null && guard++ < 5000) {
       const seat = state.toAct;
       const p = state.players[seat];
       const dec = decideBot(state, seat);
+      // Behavioral richness: sizing diversity and check-raises exist.
+      if (state.street !== "preflop") {
+        const key = state.street;
+        checkedThisStreet[key] ??= new Set();
+        if (dec.action.type === "check") checkedThisStreet[key].add(seat);
+        if (dec.action.type === "bet" && state.pot > 0) {
+          sizings.add((Math.round(((dec.action.amount ?? 0) / state.pot) * 4) / 4).toFixed(2));
+        }
+        if (dec.action.type === "raise" && checkedThisStreet[key].has(seat)) checkRaises++;
+      }
       const label = p.hole ? cardsToLabel(p.hole[0], p.hole[1]) : null;
       if (state.street === "preflop" && label) {
         decisions++;
@@ -83,6 +97,48 @@ const JUNK = new Set(["72o", "82o", "92o", "T2o", "J2o", "83o", "73o", "62o", "5
   ok(rangeExclusions === 0, `stored range never excludes the bot's actual hand (${rangeExclusions} exclusions)`);
   ok(postflopNarrowings > 200, `postflop actions narrow ranges (${postflopNarrowings} narrowings)`);
   ok(postflopGrowths === 0, `postflop ranges never grow (${postflopGrowths} growths)`);
+  ok(sizings.size >= 3, `bots use 3+ distinct bet sizings (saw: ${[...sizings].join(", ")})`);
+  ok(checkRaises > 0, `bots check-raise (${checkRaises} seen)`);
+}
+
+/* ------- Run C: the stab-every-check exploit must not print money ------- */
+{
+  let state = createTable(config);
+  state = {
+    ...state,
+    players: state.players.map((p, i) =>
+      p.isHero ? p : { ...p, archetype: ARCH[(i - 1) % ARCH.length] },
+    ),
+  };
+  let heroNet = 0;
+  const HANDS = 1200;
+  for (let h = 0; h < HANDS; h++) {
+    state = startHand(state);
+    let guard = 0;
+    while (state.phase === "betting" && state.toAct !== null && guard++ < 5000) {
+      const seat = state.toAct;
+      if (seat === 0) {
+        const la = legalActions(state);
+        if (state.street === "preflop") {
+          if (la.canCheck) state = applyAction(state, 0, { type: "check" });
+          else if (la.canCall && la.callAmount <= config.bigBlind) state = applyAction(state, 0, { type: "call", amount: la.callAmount });
+          else state = applyAction(state, 0, { type: "fold" });
+        } else if (la.canBet) {
+          state = applyAction(state, 0, { type: "bet", amount: Math.max(la.minRaiseTo, Math.round(state.pot * 0.66)) });
+        } else if (la.canCheck) {
+          state = applyAction(state, 0, { type: "check" });
+        } else {
+          state = applyAction(state, 0, { type: "fold" });
+        }
+      } else {
+        state = applyAction(state, seat, decideBot(state, seat).action);
+      }
+    }
+    heroNet += state.summary?.heroNetChips ?? 0;
+  }
+  const bb100 = (heroNet / BB / HANDS) * 100;
+  console.log(`  stab-every-check bot: ${bb100.toFixed(0)} bb/100 over ${HANDS} hands`);
+  ok(heroNet < 0, `stabbing every check with any two loses (net ${(heroNet / BB).toFixed(0)} bb)`);
 }
 
 /* ---------------- Run B: the open-jam exploit must lose now ---------------- */
