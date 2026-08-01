@@ -105,13 +105,51 @@ export function AboutView() {
             </li>
             <li className="flex gap-2">
               <Icon name="info" size={15} className="mt-0.5 shrink-0 text-info" />
-              Pre-flop ranges and drills are chart/GTO-derived. Post-flop coaching uses pot-odds and
-              Monte-Carlo equity heuristics — strong fundamentals, but not a solver.
+              Coaching and drills are graded by honest heuristics, not a solver — see "How the grading
+              works" below for exactly what that means.
             </li>
             <li className="flex gap-2">
               <Icon name="info" size={15} className="mt-0.5 shrink-0 text-info" />
               It's a play-money trainer for learning. Variance is real: even good play swings, so judge
               yourself on decisions (the coach) more than short-term results.
+            </li>
+          </ul>
+        </Card>
+
+        {/* Methodology */}
+        <h2 className="mb-3 mt-8 font-display text-xl font-bold text-[var(--text)]">How the grading works</h2>
+        <Card>
+          <p className="mb-2 text-[0.84rem] leading-relaxed text-muted">
+            An honest summary of where the "right answers" come from, so you know how much to trust
+            each verdict:
+          </p>
+          <ul className="space-y-2 text-[0.84rem] leading-relaxed text-muted">
+            <li className="flex gap-2">
+              <Icon name="info" size={15} className="mt-0.5 shrink-0 text-info" />
+              <span>
+                <span className="font-semibold text-[var(--text)]">Pre-flop charts</span> (drills,
+                study diagrams, bot ranges) are simplified ranges built from a hand-strength formula —
+                good fundamentals, but not solver output. Real solver-derived charts are on the
+                roadmap and will replace them.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <Icon name="info" size={15} className="mt-0.5 shrink-0 text-info" />
+              <span>
+                <span className="font-semibold text-[var(--text)]">Post-flop coaching</span> compares
+                your pot odds with your hand's chance of winning, estimated by dealing thousands of
+                random runouts against the opponent's likely hands (a Monte-Carlo simulation). That
+                catches clear mistakes well, but it can't see everything a solver sees — treat close
+                verdicts as guidance, not gospel.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <Icon name="info" size={15} className="mt-0.5 shrink-0 text-info" />
+              <span>
+                <span className="font-semibold text-[var(--text)]">Push/fold drills</span> use
+                simplified short-stack charts, close to — but not exactly — the true equilibrium
+                (Nash) tables. Exact tables with ante support are on the roadmap.
+              </span>
             </li>
           </ul>
         </Card>

@@ -8,8 +8,8 @@ import { Icon } from "@/components/ui/Icon";
 import { cx } from "@/lib/cx";
 
 const MODE_INFO: Record<DrillMode, { label: string; blurb: string }> = {
-  mixed: { label: "Mixed", blurb: "Pre-flop charts + post-flop pot-odds/equity. Opponent type is irrelevant — play the equilibrium." },
-  pushfold: { label: "Push / Fold", blurb: "Short-stack shove/fold and call-a-shove spots, graded by Nash-style charts." },
+  mixed: { label: "Mixed", blurb: "Pre-flop charts + post-flop pot-odds/equity. Opponent type is irrelevant — play solid baseline poker." },
+  pushfold: { label: "Push / Fold", blurb: "Short-stack shove/fold and call-a-shove spots, graded by simplified short-stack charts." },
   leaks: { label: "My Leaks", blurb: "Your coach-flagged −EV decisions, re-served until you get them right." },
 };
 
@@ -30,7 +30,7 @@ export function DrillsView() {
       <div className="border-b border-[var(--line)] px-6 py-3">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="font-display text-xl font-extrabold">GTO Drills</h1>
+            <h1 className="font-display text-xl font-extrabold">Drills</h1>
             <p className="text-[0.74rem] text-faint">{MODE_INFO[mode].blurb}</p>
           </div>
           {mode !== "leaks" && (
