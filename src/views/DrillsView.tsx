@@ -1,6 +1,7 @@
 import { useDrills, type DrillMode } from "@/store/drillStore";
 import { useLeaks } from "@/store/leakStore";
 import { useReview } from "@/store/reviewStore";
+import { useGoals, DAILY_DRILL_GOAL } from "@/store/goalStore";
 import { DrillTable } from "@/components/drills/DrillTable";
 import { MoveNavigator } from "@/components/drills/MoveNavigator";
 import { DrillControls } from "@/components/drills/DrillControls";
@@ -29,6 +30,10 @@ export function DrillsView() {
     leakSpots.filter((sp) => !sp.srs || sp.srs.due <= now).length +
     reviewCards.filter((c) => c.srs.due <= now).length;
   const totalCards = leakSpots.length + reviewCards.length;
+  const activity = useGoals((s) => s.activity);
+  void activity; // re-render on activity change
+  const todayDrills = useGoals.getState().today().drills;
+  const dayStreak = useGoals.getState().streak();
   const acc = solved > 0 ? Math.round((correct / solved) * 100) : 0;
   const emptyLeaks = mode === "leaks" && dueCount === 0;
 
@@ -50,6 +55,17 @@ export function DrillsView() {
               <Stat label="Accuracy" value={`${acc}%`} />
               <Stat label="Streak" value={String(streak)} />
               <Stat label="Best" value={String(best)} />
+              <Tooltip content={`A quiet daily goal: ${DAILY_DRILL_GOAL} drill answers (or 30 hands) keeps the day-streak alive. No reminders, no guilt — just a nudge to come back tomorrow.`}>
+                <div>
+                  <Stat
+                    label="Today"
+                    value={`${Math.min(todayDrills, DAILY_DRILL_GOAL)}/${DAILY_DRILL_GOAL}`}
+                    tone={todayDrills >= DAILY_DRILL_GOAL ? "gold" : undefined}
+                    hint
+                  />
+                </div>
+              </Tooltip>
+              {dayStreak > 0 && <Stat label="Day streak" value={String(dayStreak)} />}
             </div>
           )}
         </div>

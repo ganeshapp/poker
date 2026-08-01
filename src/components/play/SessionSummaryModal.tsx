@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useGame } from "@/store/gameStore";
+import { useStats } from "@/store/statsStore";
 import { formatSession, type HHHand } from "@/game/handHistory";
 import { HandReplayModal } from "./HandReplayModal";
 import { saveText, copyText } from "@/lib/exportFile";
@@ -19,6 +20,16 @@ export function SessionSummaryModal() {
   const [replay, setReplay] = useState<HHHand | null>(null);
 
   if (!sessionEnded) return null;
+
+  const allDecisions = useStats.getState().decisions;
+  const sessionDecisions = allDecisions.filter((d) => d.ts >= session.startedAt);
+  const sMistakes = sessionDecisions.filter((d) => d.verdict === "mistake");
+  const sGreat = sessionDecisions.filter((d) => d.verdict === "great");
+  const sessionRate = sessionDecisions.length ? sMistakes.length / sessionDecisions.length : null;
+  const lifeMistakes = allDecisions.filter((d) => d.verdict === "mistake").length;
+  const lifeRate = allDecisions.length ? lifeMistakes / allDecisions.length : null;
+  const worstDecision = [...sMistakes].sort((a, b) => a.evBb - b.evBb)[0];
+  const bestDecision = [...sGreat].sort((a, b) => b.evBb - a.evBb)[0];
 
   const hands = session.history.length;
   const netBb = session.netChips / bb;
@@ -51,6 +62,38 @@ export function SessionSummaryModal() {
       description={`${hands} hand${hands === 1 ? "" : "s"} played this session.`}
     >
       <div className="space-y-4">
+        {/* Decisions first — that's the thing you control. Money after. */}
+        {sessionDecisions.length > 0 && (
+          <div className="rounded-xl border border-gold/25 bg-gold/[0.05] p-3">
+            <div className="mb-1.5 text-[0.66rem] font-semibold uppercase tracking-wide text-gold">
+              How you played (before how it paid)
+            </div>
+            <div className="text-[0.82rem] leading-relaxed text-[var(--text)]">
+              {sessionDecisions.length} coached decision{sessionDecisions.length === 1 ? "" : "s"},{" "}
+              {sMistakes.length} flagged as mistakes
+              {sessionRate != null && lifeRate != null && allDecisions.length > sessionDecisions.length && (
+                <>
+                  {" "}
+                  ({Math.round(sessionRate * 100)}% vs your usual {Math.round(lifeRate * 100)}%
+                  {sessionRate <= lifeRate ? " — cleaner than average" : " — a rougher one"})
+                </>
+              )}
+              .
+            </div>
+            {bestDecision && (
+              <div className="mt-1.5 text-[0.76rem] text-muted">
+                <span className="font-semibold text-good">Best:</span> a {bestDecision.street}{" "}
+                {bestDecision.action} worth {fmtSigned(bestDecision.evBb)} bb.
+              </div>
+            )}
+            {worstDecision && (
+              <div className="mt-1 text-[0.76rem] text-muted">
+                <span className="font-semibold text-bad">Costliest:</span> a {worstDecision.street}{" "}
+                {worstDecision.action} ({fmtSigned(worstDecision.evBb)} bb) — it's in your Review queue.
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Stat label="Net" value={`${fmtSigned(netBb)} bb`} tone={netBb >= 0 ? "good" : "bad"} />
           <Stat label="bb / 100" value={fmtSigned(bb100)} tone={bb100 >= 0 ? "good" : "bad"} />

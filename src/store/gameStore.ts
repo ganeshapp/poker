@@ -5,6 +5,7 @@ import { engine as math } from "@/engine/engineClient";
 import { hashSeed } from "@/engine/equity";
 import { fmtBb, fmtNeed, fmtTimes } from "@/lib/format";
 import { useSettings, coachThresholds } from "./settingsStore";
+import { useGoals } from "./goalStore";
 import { ARCHETYPES } from "@/game/archetypes";
 import { buildPreflopRanges } from "@/engine/ranges";
 import { combosInSet, comboCount, cardsToLabel } from "@/engine/notation";
@@ -450,6 +451,7 @@ export const useGame = create<GameStore>((set, get) => {
         },
       }));
     }
+    useGoals.getState().record("hand");
     // lifetime stats
     if (nt.summary) {
       const heroNet = nt.summary.heroNetChips;

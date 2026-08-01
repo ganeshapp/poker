@@ -10,6 +10,7 @@ import {
 } from "@/engine/puzzles";
 import { useLeaks } from "./leakStore";
 import { useReview } from "./reviewStore";
+import { useGoals } from "./goalStore";
 import type { PuzzleKind } from "@/engine/puzzles";
 
 export type DrillMode = "mixed" | "pushfold" | "leaks";
@@ -132,6 +133,7 @@ export const useDrills = create<DrillState>((set, get) => {
       const s = get();
       if (s.answered) return;
       const res = gradePuzzle(s.puzzle, a);
+      useGoals.getState().record("drill");
 
       // Review mode: apply spaced-repetition scheduling; a card only
       // retires after repeated spaced successes. Rating untouched.
