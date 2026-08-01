@@ -8,6 +8,7 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { Modal } from "@/components/ui/Dialog";
 import { HandReplayModal } from "@/components/play/HandReplayModal";
 import { loadRecentHands, exportBackup } from "@/db/stats";
+import { useGoals, metGoal } from "@/store/goalStore";
 import { saveText } from "@/lib/exportFile";
 import type { HHHand } from "@/game/handHistory";
 import { fmtSigned, fmtPct } from "@/lib/format";
@@ -335,6 +336,53 @@ export function StatsView() {
               ))}
             </div>
           )}
+        </Card>
+        {/* Practice heatmap — quiet consistency, not guilt */}
+        <Card className="mt-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
+            <Icon name="bolt" size={16} className="text-gold" /> Practice
+          </div>
+          {(() => {
+            const activity = useGoals.getState().activity;
+            const DAY = 86_400_000;
+            const weeks = 16;
+            const cells: { key: string; count: number; met: boolean }[] = [];
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            for (let i = weeks * 7 - 1; i >= 0; i--) {
+              const t = today - i * DAY;
+              const d = new Date(t);
+              const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+              const day = activity[key];
+              cells.push({ key, count: (day?.drills ?? 0) + (day?.hands ?? 0), met: metGoal(day) });
+            }
+            const active = cells.filter((c) => c.count > 0).length;
+            return (
+              <div>
+                <div className="grid grid-flow-col grid-rows-7 gap-[3px]" style={{ width: "fit-content" }}>
+                  {cells.map((c) => (
+                    <div
+                      key={c.key}
+                      title={`${c.key}: ${c.count} reps${c.met ? " · goal met" : ""}`}
+                      className="h-[11px] w-[11px] rounded-[3px]"
+                      style={{
+                        background: c.met
+                          ? "var(--gold)"
+                          : c.count > 0
+                            ? "color-mix(in srgb, var(--gold) 35%, var(--ink-600))"
+                            : "var(--ink-700)",
+                      }}
+                    />
+                  ))}
+                </div>
+                <p className="mt-2 text-[0.7rem] text-faint">
+                  {active === 0
+                    ? "Each day you practice lights a square; hitting the daily goal (20 drills or 30 hands) makes it gold."
+                    : `${active} active day${active === 1 ? "" : "s"} in the last ${weeks} weeks. Gold = daily goal met. Consistency beats bingeing.`}
+                </p>
+              </div>
+            );
+          })()}
         </Card>
       </div>
 
