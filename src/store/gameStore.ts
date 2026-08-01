@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { applyAction, createTable, legalActions, startHand } from "@/game/engine";
 import { decideBot } from "@/game/botBrain";
 import { engine as math } from "@/engine/engineClient";
+import { hashSeed } from "@/engine/equity";
 import { ARCHETYPES } from "@/game/archetypes";
 import { buildPreflopRanges } from "@/engine/ranges";
 import { combosInSet, comboCount, cardsToLabel } from "@/engine/notation";
@@ -169,20 +170,46 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
   const fieldMode = opponents > 1;
   const oppDesc = fieldMode ? `the ${opponents}-player field` : `${vill.name}'s range`;
 
+  // Price of the decision — known before simulating, and used both for
+  // verdicts and to decide whether the estimate needs tightening.
+  const costNow =
+    action.type === "fold" || action.type === "call" ? la.callAmount : (action.amount ?? 0) - hero.committed;
+  const finalPotNow = state.pot + costNow;
+  const threshold = finalPotNow > 0 ? costNow / finalPotNow : 0;
+
+  // Deterministic per decision: same spot + same action = same verdict.
+  const seedBase = hashSeed(
+    `${state.handNumber}|${state.street}|${action.type}|${hero.hole.join("")}|${state.board.join("")}`,
+  );
+  const run = (iters: number, seed: number) =>
+    fieldMode
+      ? math.equityVsField(hero.hole as [Card, Card], state.board, opponents, iters, seed)
+      : range.length
+        ? math.equityVsRange(hero.hole as [Card, Card], state.board, range, iters, seed)
+        : math.equityVsRandom(hero.hole as [Card, Card], state.board, iters, seed);
+
   let equity = 0.5;
   let trials = 0;
+  let se = 0;
+  let exact = false;
   try {
-    const r = fieldMode
-      ? await math.equityVsField(hero.hole, state.board, opponents, 1600)
-      : range.length
-        ? await math.equityVsRange(hero.hole, state.board, range, 1600)
-        : await math.equityVsRandom(hero.hole, state.board, 1600);
+    let r = await run(1600, seedBase);
+    // Near the break-even line and still noisy? Escalate before judging.
+    if (!r.exact && costNow > 0 && Math.abs(r.equity - threshold) < 2 * r.se) {
+      r = await run(6400, seedBase + 1);
+    }
     equity = r.equity;
     trials = r.samples;
+    se = r.se;
+    exact = r.exact;
   } catch {
     equity = 0.5;
   }
+  const margin = 2 * se; // ~95% confidence half-width
   const pct = Math.round(equity * 100);
+  const marginNote = exact
+    ? `Exact count — every possible holding and runout was enumerated, so there's no simulation noise.`
+    : `Simulation precision: ±${(margin * 100).toFixed(1)}% on the equity (${trials.toLocaleString()} trials).`;
   const sourceLine = fieldMode
     ? `Equity is run against ${opponents} opponents as random hands (${trials}-trial sim) — more players, lower equity.`
     : `${vill.name}${cfg ? ` (${cfg.archetype})` : ""} range ≈ ${combos} combos (position + action).`;
@@ -204,7 +231,10 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
     const finalPot = state.pot + cost;
     const potOdds = cost / finalPot;
     const evCall = equity * finalPot - cost;
-    if (evCall <= 1.5 * bb) return null;
+    // Only flag a fold when the call is profitable even at the
+    // pessimistic edge of the estimate — never on simulation noise.
+    const evCallLow = (equity - margin) * finalPot - cost;
+    if (evCall <= 1.5 * bb || evCallLow <= 0) return null;
     return {
       ...base,
       blocking: false,
@@ -219,6 +249,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
         `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity.`,
         `Pot ${state.pot} + call ${cost} = ${finalPot}; pot odds = ${Math.round(potOdds * 100)}%.`,
         `EV(call) = ${pct}% × ${finalPot} − ${cost} ≈ +${evCall.toFixed(0)} chips (${(evCall / bb).toFixed(1)} bb) > EV(fold)=0.`,
+        marginNote,
       ],
     };
   }
@@ -232,10 +263,16 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
     let verdict: Verdict;
     let blocking = false;
     let text: string;
-    if (evAction < -0.3 * bb) {
+    // A "mistake" needs the call to lose money even at the optimistic
+    // edge of the estimate; inside the noise band it's just "close".
+    const evActionHigh = (equity + margin) * finalPot - cost;
+    if (evAction < -0.3 * bb && evActionHigh < 0) {
       verdict = "mistake";
       blocking = true;
       text = `Against ${oppDesc} your ${heroLabel} has only ${pct}% equity, but calling needs ${Math.round(potOdds * 100)}%. This call costs about ${(evAction / bb).toFixed(1)} bb — folding is better.`;
+    } else if (evAction < -0.3 * bb) {
+      verdict = "thin";
+      text = `Looks slightly losing (~${(evAction / bb).toFixed(1)} bb), but it's within the simulation's margin of error — either choice is reasonable here.`;
     } else if (equity < potOdds + 0.04) {
       verdict = "thin";
       text = `${pct}% equity vs ~${Math.round(potOdds * 100)}% needed — a marginal, close call against ${oppDesc}.`;
@@ -258,6 +295,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
         `Pot ${state.pot} + your call ${cost} = ${finalPot}; pot odds = ${cost}/${finalPot} = ${Math.round(potOdds * 100)}%.`,
         `EV(call) = ${pct}% × ${finalPot} − ${cost} ≈ ${evAction.toFixed(0)} chips (${(evAction / bb).toFixed(1)} bb). EV(fold) = 0.`,
         evAction < 0 ? `Because EV < 0, folding is the higher-EV play.` : `Because EV > 0, calling beats folding.`,
+        marginNote,
       ],
     };
   }
@@ -287,6 +325,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
       sourceLine,
       `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity when called.`,
       `A bet also wins when opponents fold — fold equity isn't shown here, so treat this as the "called" floor.`,
+      marginNote,
     ],
   };
 }

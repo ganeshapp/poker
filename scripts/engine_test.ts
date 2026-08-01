@@ -114,5 +114,34 @@ const KK = comboToInts(["Kh", "Kd"]);
 const AArange = labelToCombos("AA").map((c) => comboToInts(c));
 near(equityVsRange(KK, [], AArange, 8000).equity, 0.18, 0.04, "KK vs AA ~18%");
 
+// ---- Determinism (seeded runs are identical) ----
+const s1 = equityVsRange(AKs, [], QQ, 2000, 42);
+const s2 = equityVsRange(AKs, [], QQ, 2000, 42);
+ok(s1.win === s2.win && s1.tie === s2.tie && s1.lose === s2.lose, "same seed => identical vs-range result");
+ok(equityVsRandom(AA, ["Ks", "7d", "2c"].map(cardToInt), 2000, 7).equity ===
+   equityVsRandom(AA, ["Ks", "7d", "2c"].map(cardToInt), 2000, 7).equity,
+   "same seed => identical vs-random result");
+const sDiff = equityVsRange(AKs, [], QQ, 2000, 43);
+ok(sDiff.win !== s1.win || sDiff.tie !== s1.tie || sDiff.lose !== s1.lose, "different seed => different sample");
+
+// ---- Exact enumeration on late streets ----
+const riverBoard = ["Ad", "Kc", "7s", "2d", "9h"].map(cardToInt);
+const AKhh = comboToInts(["Ah", "Kh"]);
+const rExact = equityVsRandom(AKhh, riverBoard, 10);
+ok(rExact.exact === true, "river vs random is exact");
+ok(rExact.se === 0, "exact result has zero standard error");
+ok(rExact.samples === 990, "river vs random enumerates C(45,2)=990 combos");
+ok(rExact.equity > 0.85, "top two on river beats a random hand almost always");
+
+const turnBoard = riverBoard.slice(0, 4);
+const tExact = equityVsRange(AKhh, turnBoard, QQ, 10);
+ok(tExact.exact === true, "turn vs range is exact");
+ok(tExact.samples === 6 * 44, "turn vs QQ enumerates 6 combos x 44 rivers");
+ok(tExact.equity > 0.9, "AK top two vs QQ on the turn is dominant");
+
+// MC results report their uncertainty.
+const mc = equityVsRange(AKs, [], QQ, 2000, 5);
+ok(mc.exact === false && mc.se > 0 && mc.se < 0.02, "MC result carries a plausible standard error");
+
 console.log(`\nEngine tests: ${passed} passed, ${failed} failed.`);
 process.exit(failed === 0 ? 0 : 1);

@@ -6,3 +6,7 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 src-tauri/target
+
+# Rust build artifacts (poker-core standalone runs)
+poker-core/target/
+poker-core/Cargo.lock

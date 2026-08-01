@@ -12,38 +12,54 @@ fn evaluate_hand(cards: Vec<String>) -> EvaluatedHand {
     evaluate_named(&cards_to_ints(&cards))
 }
 
+fn empty_result() -> EquityResult {
+    EquityResult { equity: 0.5, win: 0, tie: 0, lose: 0, samples: 0, se: 0.0, exact: false }
+}
+
 #[tauri::command]
-fn equity_vs_range(hero: Vec<String>, board: Vec<String>, range: Vec<String>, iters: u32) -> EquityResult {
+fn equity_vs_range(
+    hero: Vec<String>,
+    board: Vec<String>,
+    range: Vec<String>,
+    iters: u32,
+    seed: Option<u64>,
+) -> EquityResult {
     let h = cards_to_ints(&hero);
     if h.len() < 2 {
-        return EquityResult { equity: 0.5, win: 0, tie: 0, lose: 0, samples: 0 };
+        return empty_result();
     }
     let board_ints = cards_to_ints(&board);
     let mut combos: Vec<[u32; 2]> = Vec::new();
     for label in &range {
         combos.extend(label_to_combos(label));
     }
-    core_range([h[0], h[1]], &board_ints, &combos, iters.max(1))
+    core_range([h[0], h[1]], &board_ints, &combos, iters.max(1), seed)
 }
 
 #[tauri::command]
-fn equity_vs_random(hero: Vec<String>, board: Vec<String>, iters: u32) -> EquityResult {
+fn equity_vs_random(hero: Vec<String>, board: Vec<String>, iters: u32, seed: Option<u64>) -> EquityResult {
     let h = cards_to_ints(&hero);
     if h.len() < 2 {
-        return EquityResult { equity: 0.5, win: 0, tie: 0, lose: 0, samples: 0 };
+        return empty_result();
     }
     let board_ints = cards_to_ints(&board);
-    core_random([h[0], h[1]], &board_ints, iters.max(1))
+    core_random([h[0], h[1]], &board_ints, iters.max(1), seed)
 }
 
 #[tauri::command]
-fn equity_vs_field(hero: Vec<String>, board: Vec<String>, opponents: u32, iters: u32) -> EquityResult {
+fn equity_vs_field(
+    hero: Vec<String>,
+    board: Vec<String>,
+    opponents: u32,
+    iters: u32,
+    seed: Option<u64>,
+) -> EquityResult {
     let h = cards_to_ints(&hero);
     if h.len() < 2 {
-        return EquityResult { equity: 0.5, win: 0, tie: 0, lose: 0, samples: 0 };
+        return empty_result();
     }
     let board_ints = cards_to_ints(&board);
-    core_field([h[0], h[1]], &board_ints, opponents, iters.max(1))
+    core_field([h[0], h[1]], &board_ints, opponents, iters.max(1), seed)
 }
 
 /// Save text to the user's Downloads folder; returns the full path.

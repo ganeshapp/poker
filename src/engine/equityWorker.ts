@@ -14,10 +14,10 @@ import {
    ------------------------------------------------------------------ */
 
 export type EquityJob =
-  | { kind: "range"; hero: [number, number]; board: number[]; range: [number, number][]; iters: number }
-  | { kind: "random"; hero: [number, number]; board: number[]; iters: number }
-  | { kind: "field"; hero: [number, number]; board: number[]; opponents: number; iters: number }
-  | { kind: "rangeVsRange"; heroRange: [number, number][]; board: number[]; villRange: [number, number][]; iters: number };
+  | { kind: "range"; hero: [number, number]; board: number[]; range: [number, number][]; iters: number; seed?: number }
+  | { kind: "random"; hero: [number, number]; board: number[]; iters: number; seed?: number }
+  | { kind: "field"; hero: [number, number]; board: number[]; opponents: number; iters: number; seed?: number }
+  | { kind: "rangeVsRange"; heroRange: [number, number][]; board: number[]; villRange: [number, number][]; iters: number; seed?: number };
 
 export interface EquityRequest {
   id: number;
@@ -32,13 +32,13 @@ export interface EquityResponse {
 function runJob(job: EquityJob): EquityResult {
   switch (job.kind) {
     case "range":
-      return equityVsRange(job.hero, job.board, job.range, job.iters);
+      return equityVsRange(job.hero, job.board, job.range, job.iters, job.seed);
     case "random":
-      return equityVsRandom(job.hero, job.board, job.iters);
+      return equityVsRandom(job.hero, job.board, job.iters, job.seed);
     case "field":
-      return equityVsField(job.hero, job.board, job.opponents, job.iters);
+      return equityVsField(job.hero, job.board, job.opponents, job.iters, job.seed);
     case "rangeVsRange":
-      return equityRangeVsRange(job.heroRange, job.board, job.villRange, job.iters);
+      return equityRangeVsRange(job.heroRange, job.board, job.villRange, job.iters, job.seed);
   }
 }
 
