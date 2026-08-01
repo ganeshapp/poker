@@ -60,6 +60,12 @@ export interface Puzzle {
   equity?: number;
   potOdds?: number;
   difficulty: number; // 1..3
+  /** The range this spot was graded against, for the feedback matrix. */
+  gradeRange?: HandLabel[];
+  gradeRangeTitle?: string;
+  /** Study lesson that teaches this spot's concept. */
+  lessonId?: string;
+  lessonTitle?: string;
 }
 
 const ORDER: Position[] = ["UTG", "MP", "CO", "BTN", "SB", "BB"];
@@ -67,6 +73,14 @@ const SB = 0.5;
 const BBV = 1;
 
 const pctOf = (chart: Record<string, number>) => Math.round(chartWidth(chart) * 100);
+
+/** Labels a frequency chart plays at least half the time. */
+function chartLabels05(chart: Record<string, number>): HandLabel[] {
+  return Object.entries(chart)
+    .filter(([, f]) => f >= 0.5)
+    .map(([l]) => l as HandLabel);
+}
+const nashLabels = chartLabels05;
 
 let SEQ = 1;
 const rint = (a: number, b: number) => a + Math.floor(Math.random() * (b - a + 1));
@@ -152,6 +166,10 @@ function genRfi(): Puzzle {
         ? `${heroPos} opens about ${pctOf(chart)}% of hands. ${label} is in that range, so the chart play is to raise (limping isn't part of a solid opening strategy).`
         : `${heroPos} opens about ${pctOf(chart)}% of hands. ${label} isn't in that range, so fold — limping/calling here is −EV.`,
     difficulty: mixed ? 3 : 1,
+    gradeRange: chartLabels05(chart),
+    gradeRangeTitle: `${heroPos} opening range (~${pctOf(chart)}%)`,
+    lessonId: "opening-ranges",
+    lessonTitle: "Opening Ranges by Position",
   };
 }
 
@@ -236,6 +254,10 @@ function genVsRaise(): Puzzle {
     accept,
     rationale,
     difficulty: mixed ? 3 : 2,
+    gradeRange: [...new Set([...chartLabels05(charts.threebet), ...chartLabels05(charts.call)])],
+    gradeRangeTitle: `${heroPos} continue range vs a ${raiserPos} open`,
+    lessonId: "three-betting",
+    lessonTitle: "3-Betting",
   };
 }
 
@@ -339,6 +361,10 @@ function genPostflopBet(): Puzzle {
     equity: eq,
     potOdds: breakEven,
     difficulty: eq > breakEven - 0.06 && eq < breakEven + 0.06 ? 3 : 2,
+    gradeRange: [...villRange],
+    gradeRangeTitle: `${villainPos}'s assumed ${street} continuing range`,
+    lessonId: "pot-odds",
+    lessonTitle: "Pot Odds, Break-even & EV",
   };
 }
 
@@ -415,6 +441,10 @@ function genPostflopCheck(): Puzzle {
     }`,
     equity: eq,
     difficulty: 2,
+    gradeRange: [...topPercentRange(STREET_RANGE_PCT[street])],
+    gradeRangeTitle: `${villainPos}'s assumed ${street} range`,
+    lessonId: "bet-sizing",
+    lessonTitle: "Bet Sizing",
   };
 }
 
@@ -505,6 +535,10 @@ export function generatePushFold(): Puzzle {
       accept,
       rationale,
       difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
+      gradeRange: nashLabels(NASH_SHOVE[stack]?.[heroPos as PushFoldPos] ?? {}),
+      gradeRangeTitle: `Nash ${stack}bb ${heroPos} jamming range`,
+      lessonId: "spr",
+      lessonTitle: "SPR & Commitment",
     };
   }
 
@@ -547,6 +581,10 @@ export function generatePushFold(): Puzzle {
     accept,
     rationale,
     difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
+    gradeRange: nashLabels(NASH_CALL[stack]?.[`${shoverPos}>BB`] ?? {}),
+    gradeRangeTitle: `Nash BB calling range vs ${stack}bb ${shoverPos} jam`,
+    lessonId: "spr",
+    lessonTitle: "SPR & Commitment",
   };
 }
 

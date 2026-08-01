@@ -1,6 +1,6 @@
-import { useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { useNav, type Tab } from "@/store/navStore";
 import { PlayView } from "@/views/PlayView";
 import { DrillsView } from "@/views/DrillsView";
 import { StudyView } from "@/views/StudyView";
@@ -9,8 +9,6 @@ import { AboutView } from "@/views/AboutView";
 import { useTheme } from "@/store/themeStore";
 import { ShortcutOverlay } from "@/components/ui/ShortcutOverlay";
 import { cx } from "@/lib/cx";
-
-type Tab = "play" | "drills" | "study" | "stats" | "about";
 
 const NAV: { id: Tab; label: string; icon: IconName }[] = [
   { id: "play", label: "Play", icon: "play" },
@@ -21,7 +19,8 @@ const NAV: { id: Tab; label: string; icon: IconName }[] = [
 ];
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("play");
+  const tab = useNav((s) => s.tab);
+  const setTab = useNav((s) => s.go);
   const theme = useTheme((s) => s.theme);
   const toggleTheme = useTheme((s) => s.toggle);
 
