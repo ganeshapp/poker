@@ -4,7 +4,8 @@
 //! monotonic `score`, plus Monte Carlo equity. Cards are encoded as
 //! `int = rankIndex * 4 + suitIndex`, rankIndex 0..12 → 2..A, suit 0..3 → cdhs.
 
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde::Serialize;
 
 const RANKS: &str = "23456789TJQKA";
@@ -25,6 +26,91 @@ pub struct EquityResult {
     pub tie: u32,
     pub lose: u32,
     pub samples: u32,
+    /// Standard error of the equity estimate (0 when exact).
+    pub se: f64,
+    /// True when computed by exhaustive enumeration, not sampling.
+    pub exact: bool,
+}
+
+fn seeded_rng(seed: Option<u64>) -> StdRng {
+    match seed {
+        Some(s) => StdRng::seed_from_u64(s),
+        None => StdRng::from_entropy(),
+    }
+}
+
+fn mc_result(win: u32, tie: u32, lose: u32, equity_sum: Option<f64>) -> EquityResult {
+    let samples = win + tie + lose;
+    let equity = if samples == 0 {
+        0.5
+    } else {
+        match equity_sum {
+            Some(s) => s / samples as f64,
+            None => (win as f64 + tie as f64 / 2.0) / samples as f64,
+        }
+    };
+    let se = if samples == 0 {
+        0.0
+    } else {
+        ((equity * (1.0 - equity)).max(1e-9) / samples as f64).sqrt()
+    };
+    EquityResult { equity, win, tie, lose, samples, se, exact: false }
+}
+
+fn exact_result(win: u32, tie: u32, lose: u32) -> EquityResult {
+    let samples = win + tie + lose;
+    let equity = if samples == 0 {
+        0.5
+    } else {
+        (win as f64 + tie as f64 / 2.0) / samples as f64
+    };
+    EquityResult { equity, win, tie, lose, samples, se: 0.0, exact: true }
+}
+
+/// Exhaustive equity vs a set of villain combos on a turn/river board
+/// (runouts of length 0 or 1 only).
+fn exact_vs_combos(hero: [u32; 2], board: &[u32], combos: &[[u32; 2]]) -> EquityResult {
+    let mut used = [false; 52];
+    used[hero[0] as usize] = true;
+    used[hero[1] as usize] = true;
+    for &b in board {
+        used[b as usize] = true;
+    }
+    let need = 5 - board.len();
+    let mut hero_base: Vec<u32> = vec![hero[0], hero[1]];
+    hero_base.extend_from_slice(board);
+
+    let (mut win, mut tie, mut lose) = (0u32, 0u32, 0u32);
+    let mut compare = |villain: &[u32; 2], runout: &[u32]| {
+        let mut h = hero_base.clone();
+        h.extend_from_slice(runout);
+        let mut v = vec![villain[0], villain[1]];
+        v.extend_from_slice(board);
+        v.extend_from_slice(runout);
+        let hs = evaluate(&h).1;
+        let vs = evaluate(&v).1;
+        if hs > vs {
+            win += 1;
+        } else if hs < vs {
+            lose += 1;
+        } else {
+            tie += 1;
+        }
+    };
+
+    for villain in combos {
+        if need == 0 {
+            compare(villain, &[]);
+        } else {
+            for c in 0..52u32 {
+                if used[c as usize] || c == villain[0] || c == villain[1] {
+                    continue;
+                }
+                compare(villain, &[c]);
+            }
+        }
+    }
+    exact_result(win, tie, lose)
 }
 
 pub fn card_to_int(s: &str) -> u32 {
@@ -244,7 +330,13 @@ fn draw_distinct(work: &mut Vec<u32>, len: &mut usize, count: usize, rng: &mut i
     out
 }
 
-pub fn equity_vs_range(hero: [u32; 2], board: &[u32], range: &[[u32; 2]], iters: u32) -> EquityResult {
+pub fn equity_vs_range(
+    hero: [u32; 2],
+    board: &[u32],
+    range: &[[u32; 2]],
+    iters: u32,
+    seed: Option<u64>,
+) -> EquityResult {
     let mut used = [false; 52];
     used[hero[0] as usize] = true;
     used[hero[1] as usize] = true;
@@ -258,12 +350,16 @@ pub fn equity_vs_range(hero: [u32; 2], board: &[u32], range: &[[u32; 2]], iters:
         .filter(|c| !used[c[0] as usize] && !used[c[1] as usize])
         .collect();
     if valid.is_empty() {
-        return EquityResult { equity: 0.5, win: 0, tie: 0, lose: 0, samples: 0 };
+        return EquityResult { equity: 0.5, win: 0, tie: 0, lose: 0, samples: 0, se: 0.0, exact: false };
+    }
+
+    if board.len() >= 4 {
+        return exact_vs_combos(hero, board, &valid);
     }
 
     let base_avail: Vec<u32> = (0..52u32).filter(|i| !used[*i as usize]).collect();
     let need = 5 - board.len();
-    let mut rng = rand::thread_rng();
+    let mut rng = seeded_rng(seed);
     let (mut win, mut tie, mut lose) = (0u32, 0u32, 0u32);
 
     let mut hero_base: Vec<u32> = Vec::with_capacity(7);
@@ -300,26 +396,35 @@ pub fn equity_vs_range(hero: [u32; 2], board: &[u32], range: &[[u32; 2]], iters:
         }
     }
 
-    let samples = win + tie + lose;
-    EquityResult {
-        equity: (win as f64 + tie as f64 / 2.0) / samples as f64,
-        win,
-        tie,
-        lose,
-        samples,
-    }
+    mc_result(win, tie, lose, None)
 }
 
-pub fn equity_vs_random(hero: [u32; 2], board: &[u32], iters: u32) -> EquityResult {
+pub fn equity_vs_random(hero: [u32; 2], board: &[u32], iters: u32, seed: Option<u64>) -> EquityResult {
     let mut used = [false; 52];
     used[hero[0] as usize] = true;
     used[hero[1] as usize] = true;
     for &b in board {
         used[b as usize] = true;
     }
+
+    if board.len() == 5 {
+        let mut combos: Vec<[u32; 2]> = Vec::new();
+        for a in 0..52u32 {
+            if used[a as usize] {
+                continue;
+            }
+            for b in (a + 1)..52u32 {
+                if !used[b as usize] {
+                    combos.push([a, b]);
+                }
+            }
+        }
+        return exact_vs_combos(hero, board, &combos);
+    }
+
     let base_avail: Vec<u32> = (0..52u32).filter(|i| !used[*i as usize]).collect();
     let need = 5 - board.len();
-    let mut rng = rand::thread_rng();
+    let mut rng = seeded_rng(seed);
     let (mut win, mut tie, mut lose) = (0u32, 0u32, 0u32);
 
     let mut hero_base: Vec<u32> = Vec::with_capacity(7);
@@ -350,18 +455,17 @@ pub fn equity_vs_random(hero: [u32; 2], board: &[u32], iters: u32) -> EquityResu
         }
     }
 
-    let samples = win + tie + lose;
-    EquityResult {
-        equity: (win as f64 + tie as f64 / 2.0) / samples as f64,
-        win,
-        tie,
-        lose,
-        samples,
-    }
+    mc_result(win, tie, lose, None)
 }
 
 /// Hero equity vs a field of N uniformly-random opponents (multiway).
-pub fn equity_vs_field(hero: [u32; 2], board: &[u32], num_opponents: u32, iters: u32) -> EquityResult {
+pub fn equity_vs_field(
+    hero: [u32; 2],
+    board: &[u32],
+    num_opponents: u32,
+    iters: u32,
+    seed: Option<u64>,
+) -> EquityResult {
     let n = num_opponents.clamp(1, 8) as usize;
     let mut used = [false; 52];
     used[hero[0] as usize] = true;
@@ -371,7 +475,7 @@ pub fn equity_vs_field(hero: [u32; 2], board: &[u32], num_opponents: u32, iters:
     }
     let base_avail: Vec<u32> = (0..52u32).filter(|i| !used[*i as usize]).collect();
     let need = 5 - board.len();
-    let mut rng = rand::thread_rng();
+    let mut rng = seeded_rng(seed);
     let (mut win, mut tie, mut lose) = (0u32, 0u32, 0u32);
     let mut equity_sum = 0f64;
 
@@ -415,14 +519,7 @@ pub fn equity_vs_field(hero: [u32; 2], board: &[u32], num_opponents: u32, iters:
         }
     }
 
-    let samples = win + tie + lose;
-    EquityResult {
-        equity: equity_sum / samples as f64,
-        win,
-        tie,
-        lose,
-        samples,
-    }
+    mc_result(win, tie, lose, Some(equity_sum))
 }
 
 #[cfg(test)]
@@ -472,7 +569,7 @@ mod tests {
 
     #[test]
     fn aa_vs_random() {
-        let e = equity_vs_random([card_to_int("Ah"), card_to_int("Ad")], &[], 30000);
+        let e = equity_vs_random([card_to_int("Ah"), card_to_int("Ad")], &[], 30000, None);
         assert!((e.equity - 0.85).abs() < 0.02, "AA equity was {}", e.equity);
     }
 
@@ -480,16 +577,50 @@ mod tests {
     fn aks_vs_qq() {
         let hero = [card_to_int("As"), card_to_int("Ks")];
         let range = label_to_combos("QQ");
-        let e = equity_vs_range(hero, &[], &range, 40000);
+        let e = equity_vs_range(hero, &[], &range, 40000, None);
         assert!((e.equity - 0.46).abs() < 0.03, "AKs vs QQ was {}", e.equity);
     }
 
     #[test]
     fn multiway_decay() {
         let aa = [card_to_int("Ah"), card_to_int("Ad")];
-        let e1 = equity_vs_field(aa, &[], 1, 20000).equity;
-        let e4 = equity_vs_field(aa, &[], 4, 20000).equity;
+        let e1 = equity_vs_field(aa, &[], 1, 20000, None).equity;
+        let e4 = equity_vs_field(aa, &[], 4, 20000, None).equity;
         assert!(e1 > e4, "AA equity should drop multiway ({} vs {})", e1, e4);
         assert!((e1 - 0.85).abs() < 0.03, "AA vs 1 was {}", e1);
+    }
+
+    #[test]
+    fn seeded_runs_are_identical() {
+        let hero = [card_to_int("As"), card_to_int("Ks")];
+        let range = label_to_combos("QQ");
+        let a = equity_vs_range(hero, &[], &range, 2000, Some(42));
+        let b = equity_vs_range(hero, &[], &range, 2000, Some(42));
+        assert_eq!(a.win, b.win);
+        assert_eq!(a.tie, b.tie);
+        assert_eq!(a.lose, b.lose);
+        let f1 = equity_vs_field(hero, &[], 3, 2000, Some(7)).equity;
+        let f2 = equity_vs_field(hero, &[], 3, 2000, Some(7)).equity;
+        assert_eq!(f1, f2);
+    }
+
+    #[test]
+    fn river_is_exact() {
+        let hero = [card_to_int("Ah"), card_to_int("Kh")];
+        let board = cards_to_ints(&[
+            "Ad".into(),
+            "Kc".into(),
+            "7s".into(),
+            "2d".into(),
+            "9h".into(),
+        ]);
+        let e = equity_vs_random(hero, &board, 10, None);
+        assert!(e.exact, "river vs random should be exact");
+        assert_eq!(e.se, 0.0);
+        assert_eq!(e.samples, 990, "45 choose 2 villain combos");
+        // Turn vs range is exact too.
+        let range = label_to_combos("QQ");
+        let t = equity_vs_range(hero, &board[..4], &range, 10, None);
+        assert!(t.exact, "turn vs range should be exact");
     }
 }

@@ -150,10 +150,11 @@ export const engine = {
     board: Card[],
     range: HandLabel[],
     iters = 1500,
+    seed?: number,
   ): Promise<EquityResult> {
     if (isNative()) {
       try {
-        const r = await invoke<EquityResult>("equity_vs_range", { hero, board, range, iters });
+        const r = await invoke<EquityResult>("equity_vs_range", { hero, board, range, iters, seed: seed ?? null });
         noteBackend("rust");
         return r;
       } catch {
@@ -166,20 +167,21 @@ export const engine = {
       board: board.map(cardToInt),
       range: expandRange(range, hero, board),
       iters,
+      seed,
     });
   },
 
-  async equityVsRandom(hero: [Card, Card], board: Card[], iters = 1200): Promise<EquityResult> {
+  async equityVsRandom(hero: [Card, Card], board: Card[], iters = 1200, seed?: number): Promise<EquityResult> {
     if (isNative()) {
       try {
-        const r = await invoke<EquityResult>("equity_vs_random", { hero, board, iters });
+        const r = await invoke<EquityResult>("equity_vs_random", { hero, board, iters, seed: seed ?? null });
         noteBackend("rust");
         return r;
       } catch {
         /* fall through */
       }
     }
-    return fallback({ kind: "random", hero: comboToInts(hero), board: board.map(cardToInt), iters });
+    return fallback({ kind: "random", hero: comboToInts(hero), board: board.map(cardToInt), iters, seed });
   },
 
   async equityVsField(
@@ -187,10 +189,17 @@ export const engine = {
     board: Card[],
     numOpponents: number,
     iters = 1500,
+    seed?: number,
   ): Promise<EquityResult> {
     if (isNative()) {
       try {
-        const r = await invoke<EquityResult>("equity_vs_field", { hero, board, opponents: numOpponents, iters });
+        const r = await invoke<EquityResult>("equity_vs_field", {
+          hero,
+          board,
+          opponents: numOpponents,
+          iters,
+          seed: seed ?? null,
+        });
         noteBackend("rust");
         return r;
       } catch {
@@ -203,6 +212,7 @@ export const engine = {
       board: board.map(cardToInt),
       opponents: numOpponents,
       iters,
+      seed,
     });
   },
 
@@ -216,6 +226,7 @@ export const engine = {
     boardInts: number[],
     villCombos: [number, number][],
     iters = 5000,
+    seed?: number,
   ): Promise<EquityResult> {
     return fallback({
       kind: "rangeVsRange",
@@ -223,6 +234,7 @@ export const engine = {
       board: boardInts,
       villRange: villCombos,
       iters,
+      seed,
     });
   },
 };

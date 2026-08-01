@@ -2,7 +2,7 @@ import type { Card, Position, Street, HandLabel } from "../types/poker.ts";
 import { makeDeck, shuffle, cardToInt } from "./cards.ts";
 import { cardsToLabel, labelToCombos } from "./notation.ts";
 import { topPercentRange } from "./ranges.ts";
-import { equityVsRange, comboToInts } from "./equity.ts";
+import { equityVsRange, comboToInts, hashSeed } from "./equity.ts";
 
 /* ==================================================================
    Drills — procedural puzzle generator + heuristic grader.
@@ -247,17 +247,29 @@ function genPostflopBet(): Puzzle {
   const combos = rangeToCombos(villRange, blocked);
   const heroInts = comboToInts(hole);
   const boardInts = board.map(cardToInt);
-  const eq = combos.length ? equityVsRange(heroInts, boardInts, combos, 1500).equity : 0.5;
+  // Seeded by the spot itself: re-grading the same puzzle always gives
+  // the same answer. Turn/river spots are enumerated exactly.
+  const r = combos.length
+    ? equityVsRange(heroInts, boardInts, combos, 3000, hashSeed(`${hole.join("")}|${board.join("")}`))
+    : null;
+  const eq = r?.equity ?? 0.5;
   const breakEven = toCall / (pot + toCall);
+  const band = Math.max(0.02, 2 * (r?.se ?? 0));
 
   let best: DrillAction;
   let accept: DrillAction[];
-  if (eq >= breakEven + 0.02) {
+  let closeCall = false;
+  if (eq >= breakEven + band) {
     best = "call";
     accept = eq > 0.72 ? ["call", "raise"] : ["call"];
-  } else {
+  } else if (eq <= breakEven - band) {
     best = "fold";
     accept = ["fold"];
+  } else {
+    // Inside the noise/indifference band: either answer is accepted.
+    closeCall = true;
+    best = eq >= breakEven ? "call" : "fold";
+    accept = ["fold", "call"];
   }
 
   const seats = fullSeats(
@@ -294,13 +306,15 @@ function genPostflopBet(): Puzzle {
     ],
     best,
     accept,
-    rationale: `You have ~${Math.round(eq * 100)}% equity against a plausible ${street} continuing range, and you're being laid ${Math.round(breakEven * 100)}% pot odds. ${
-      best === "call"
-        ? eq > 0.72
-          ? "That's a clear call — and strong enough to raise for value."
-          : "Equity beats the price, so call."
-        : "Equity is below the price, so fold."
-    }`,
+    rationale: closeCall
+      ? `Razor-thin: ~${Math.round(eq * 100)}% equity against a plausible ${street} continuing range vs ${Math.round(breakEven * 100)}% pot odds. That's inside the margin where folding and calling are both fine — ${best === "call" ? "calling" : "folding"} is marginally better.`
+      : `You have ~${Math.round(eq * 100)}% equity against a plausible ${street} continuing range, and you're being laid ${Math.round(breakEven * 100)}% pot odds. ${
+          best === "call"
+            ? eq > 0.72
+              ? "That's a clear call — and strong enough to raise for value."
+              : "Equity beats the price, so call."
+            : "Equity is below the price, so fold."
+        }`,
     equity: eq,
     potOdds: breakEven,
     difficulty: eq > breakEven - 0.06 && eq < breakEven + 0.06 ? 3 : 2,
@@ -320,15 +334,19 @@ function genPostflopCheck(): Puzzle {
 
   const blocked = new Set<Card>([...hole, ...board]);
   const combos = rangeToCombos(topPercentRange(STREET_RANGE_PCT[street]), blocked);
-  const eq = combos.length ? equityVsRange(comboToInts(hole), board.map(cardToInt), combos, 1500).equity : 0.5;
+  const r = combos.length
+    ? equityVsRange(comboToInts(hole), board.map(cardToInt), combos, 3000, hashSeed(`${hole.join("")}|${board.join("")}`))
+    : null;
+  const eq = r?.equity ?? 0.5;
+  const band = Math.max(0.02, 2 * (r?.se ?? 0));
 
   let best: DrillAction;
   let accept: DrillAction[];
-  if (eq > 0.6) {
+  if (eq > 0.6 + band) {
     best = "bet";
     accept = ["bet"];
-  } else if (eq > 0.5) {
-    best = "bet";
+  } else if (eq > 0.5 - band) {
+    best = eq > 0.5 ? "bet" : "check";
     accept = ["bet", "check"];
   } else {
     best = "check";
@@ -368,10 +386,10 @@ function genPostflopCheck(): Puzzle {
     best,
     accept,
     rationale: `With ~${Math.round(eq * 100)}% equity vs ${villainPos}'s range, ${
-      eq > 0.6
-        ? "you're ahead often enough to bet for value."
-        : eq > 0.5
-          ? "betting or checking are both fine — it's a marginal value/pot-control spot."
+      accept.length === 2
+        ? "betting and checking are both fine — it's a marginal value/pot-control spot."
+        : best === "bet"
+          ? "you're ahead often enough to bet for value."
           : "you don't have enough to value bet; check and keep the pot small."
     }`,
     equity: eq,

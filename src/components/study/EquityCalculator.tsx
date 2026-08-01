@@ -135,7 +135,11 @@ export function EquityCalculator() {
             <span><span className="text-good">Win</span> {fmtPct(result.win / result.samples)}</span>
             <span><span className="text-warn">Tie</span> {fmtPct(result.tie / result.samples)}</span>
             <span><span className="text-bad">Lose</span> {fmtPct(result.lose / result.samples)}</span>
-            <span className="ml-auto text-faint">{result.samples.toLocaleString()} trials</span>
+            <span className="ml-auto text-faint">
+              {result.exact
+                ? `${result.samples.toLocaleString()} matchups · exact`
+                : `${result.samples.toLocaleString()} trials · ±${(2 * result.se * 100).toFixed(1)}%`}
+            </span>
           </div>
         </div>
       )}
