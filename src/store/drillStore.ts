@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   generatePuzzle,
   generatePushFold,
+  generateExploit,
   puzzleFromLeak,
   gradePuzzle,
   type DrillAction,
@@ -13,7 +14,7 @@ import { useReview } from "./reviewStore";
 import { useGoals } from "./goalStore";
 import type { PuzzleKind } from "@/engine/puzzles";
 
-export type DrillMode = "mixed" | "pushfold" | "leaks";
+export type DrillMode = "mixed" | "pushfold" | "exploit" | "leaks";
 
 const KEY = "allin.drills.v1";
 
@@ -48,6 +49,7 @@ function genFor(
   focusKind: PuzzleKind | null = null,
 ): { puzzle: Puzzle | null; leakId: string | null; reviewId?: string | null } {
   if (mode === "pushfold") return { puzzle: generatePushFold(), leakId: null };
+  if (mode === "exploit") return { puzzle: generateExploit(), leakId: null };
   if (mode === "leaks") {
     // The Review queue: due coach-flagged leaks + due missed drills.
     const now = Date.now();

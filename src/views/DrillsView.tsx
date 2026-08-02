@@ -12,6 +12,7 @@ import { cx } from "@/lib/cx";
 const MODE_INFO: Record<DrillMode, { label: string; blurb: string }> = {
   mixed: { label: "Mixed", blurb: "Pre-flop charts + post-flop pot-odds/equity. Opponent type is irrelevant — play solid baseline poker." },
   pushfold: { label: "Push / Fold", blurb: "Short-stack shove/fold and call-a-shove spots, graded by computed Nash equilibrium tables (chip-EV, no antes)." },
+  exploit: { label: "Exploits", blurb: "Best deviation vs a KNOWN opponent type — the spots where the right play differs from balanced, with both numbers shown." },
   leaks: { label: "Review", blurb: "Your coach-flagged leaks and missed drills on a spaced schedule — beat a spot 3 times over days to retire it." },
 };
 

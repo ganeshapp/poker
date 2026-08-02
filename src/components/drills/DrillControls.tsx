@@ -44,6 +44,8 @@ export function DrillControls() {
   const sourceLabel =
     puzzle.kind === "leak"
       ? "Your flagged spot"
+      : puzzle.kind === "exploit"
+        ? "Exploit · vs a known type"
       : puzzle.kind === "pushfold"
         ? puzzle.icm
           ? "Push/Fold · ICM bubble"
