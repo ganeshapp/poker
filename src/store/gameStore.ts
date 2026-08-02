@@ -224,6 +224,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
   }
   const margin = 2 * se; // ~95% confidence half-width
   const pct = Math.round(equity * 100);
+  const baselineNote = `Baseline: verdicts grade vs THIS opponent's likely hands (exploitative). Vs a balanced player the answer can differ — most sharply against extreme types like Stations (value-bet wider, never bluff) and Nits (respect their raises).`;
   const marginNote = exact
     ? `Exact count — every possible holding and runout was enumerated, so there's no simulation noise.`
     : `Simulation precision: ±${(margin * 100).toFixed(1)}% on the equity (${trials.toLocaleString()} trials).`;
@@ -267,7 +268,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
         `Pot ${state.pot} + call ${cost} = ${finalPot}; pot odds = ${Math.round(potOdds * 100)}%.`,
         `EV(call) = ${pct}% × ${finalPot} − ${cost} ≈ +${evCall.toFixed(0)} chips (${(evCall / bb).toFixed(1)} bb) > EV(fold)=0.`,
       ],
-      expert: [sourceLine, marginNote],
+      expert: [sourceLine, marginNote, baselineNote],
     };
   }
 
@@ -319,7 +320,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
         `EV(call) = ${pct}% × ${finalPot} − ${cost} ≈ ${evAction.toFixed(0)} chips (${(evAction / bb).toFixed(1)} bb). EV(fold) = 0.`,
         evAction < 0 ? `Because EV < 0, folding is the higher-EV play.` : `Because EV > 0, calling beats folding.`,
       ],
-      expert: [sourceLine, marginNote],
+      expert: [sourceLine, marginNote, baselineNote],
     };
   }
 
@@ -346,7 +347,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
         `A ~66% pot bet (${betTo}) gets called by enough worse hands to profit when you win this often.`,
         `Checking wins the same pot but never builds it — EV left behind grows with your win chance.`,
       ],
-      expert: [sourceLine, marginNote, `Post-flop aggression verdicts are heuristic (no solver) — treat as guidance, not gospel.`],
+      expert: [sourceLine, marginNote, baselineNote, `Post-flop aggression verdicts are heuristic (no solver) — treat as guidance, not gospel.`],
     };
   }
 
@@ -378,7 +379,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
         `Assuming each opponent continues ~${Math.round(continueFrac * 100)}% vs this size, everyone folds only ${Math.round(pAllFold * 100)}% of the time.`,
         `EV ≈ ${Math.round(pAllFold * 100)}% × ${state.pot} + ${Math.round((1 - pAllFold) * 100)}% × (${pct}% × ${state.pot + 2 * costNow} − ${costNow}) ≈ ${evBluff.toFixed(0)} chips.`,
       ],
-      expert: [sourceLine, marginNote, `The fold-equity model is heuristic (fixed continue rates by bet size, no ranges) — aggression verdicts are approximate by design.`],
+      expert: [sourceLine, marginNote, baselineNote, `The fold-equity model is heuristic (fixed continue rates by bet size, no ranges) — aggression verdicts are approximate by design.`],
     };
   }
   if (equity > 0.6) {
@@ -407,7 +408,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
       `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity when called.`,
       `A bet also wins when opponents fold — fold equity isn't shown here, so treat this as the "called" floor.`,
     ],
-    expert: [sourceLine, marginNote],
+    expert: [sourceLine, marginNote, baselineNote],
   };
 }
 

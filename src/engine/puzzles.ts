@@ -27,6 +27,7 @@ export type PuzzleKind =
   | "check-raise"
   | "river-decision"
   | "pushfold"
+  | "exploit"
   | "leak";
 
 export interface DrillOption {
@@ -732,6 +733,169 @@ function genRiverDecision(): Puzzle {
     gradeRangeTitle: `${villainPos}'s range after calling flop + turn`,
     lessonId: "turn-river",
     lessonTitle: "Turn & River Play",
+  };
+}
+
+/* --------------- Exploit drills: best deviation vs a KNOWN type ---------------
+   The coach's play-mode verdicts grade vs the specific bot's likely
+   hands (an exploitative baseline). These drills teach the concept
+   explicitly: spots where the right play vs THIS opponent differs
+   from the balanced play, with both numbers shown. --------------- */
+
+export function generateExploit(): Puzzle {
+  const template = rint(0, 2);
+  const deck = shuffle(makeDeck());
+
+  if (template === 0) {
+    // Thin value vs a Station: they call river bets with far too much.
+    let hole: [Card, Card];
+    let board: Card[];
+    let eqStation: number;
+    let eqBalanced: number;
+    let tries = 0;
+    // Deal until hero has a modest-but-ahead river hand (the thin-value zone).
+    do {
+      const d = shuffle(makeDeck());
+      hole = [d[0], d[1]];
+      board = d.slice(2, 7);
+      const blocked = new Set<Card>([...hole, ...board]);
+      const stationRange = rangeToCombos(topPercentRange(60), blocked); // calls with almost anything playable
+      const balancedRange = rangeToCombos(topPercentRange(28), blocked); // a sane calling range
+      const bInts = board.map(cardToInt);
+      eqStation = stationRange.length ? equityVsRange(comboToInts(hole), bInts, stationRange, 10, hashSeed(`ex0|${hole.join("")}|${board.join("")}`)).equity : 0.5;
+      eqBalanced = balancedRange.length ? equityVsRange(comboToInts(hole), bInts, balancedRange, 10, hashSeed(`ex0b|${hole.join("")}|${board.join("")}`)).equity : 0.5;
+    } while ((eqStation < 0.56 || eqStation > 0.75) && ++tries < 80);
+    const label = cardsToLabel(hole[0], hole[1]);
+    const pot = 9;
+    const betTo = r1(pot * 0.6);
+    const gain = r1((eqStation - 0.5) * betTo * 2 * 10) / 10;
+    return {
+      id: SEQ++,
+      kind: "exploit",
+      source: "heuristic",
+      street: "river",
+      heroPos: "BTN",
+      hole,
+      handLabel: label,
+      board,
+      pot,
+      toCall: 0,
+      bb: BBV,
+      seats: fullSeats("BTN", ORDER.filter((p) => p !== "BTN" && p !== "BB"), ["BB"]),
+      frames: [
+        { text: `The BB is a CALLING STATION (calls ~60% of hands to the river). You bet flop and turn; they called both.`, street: "preflop", board: [], pot: 5 },
+        { text: `River: ${board.join(" ")} (pot ${pot} bb). The Station checks.`, street: "river", board: [...board], pot },
+        { text: `Your hand wins ~${Math.round(eqStation * 100)}% against THEIR calling range. Action on you.`, street: "river", board: [...board], pot },
+      ],
+      options: [
+        { action: "check", label: "Check back" },
+        { action: "bet", label: `Bet ${betTo}`, amount: betTo },
+      ],
+      best: "bet",
+      accept: ["bet"],
+      rationale: `THE EXPLOIT: vs a balanced player your ${label} (${Math.round(eqBalanced * 100)}% vs a sane calling range) is a check — worse hands rarely pay a third bet. But a Station calls with almost anything, so the same hand wins ~${Math.round(eqStation * 100)}% against what they'll CALL with. Bet thin, every time — that's roughly +${gain} bb the balanced line leaves behind. Vs Stations: value bet more, never bluff.`,
+      equity: eqStation,
+      difficulty: 2,
+      gradeRange: [...topPercentRange(60)],
+      gradeRangeTitle: "What a Station calls a river bet with (~60%)",
+      lessonId: "exploits",
+      lessonTitle: "Exploiting the Archetypes",
+      icm: false,
+    };
+  }
+
+  if (template === 1) {
+    // Respect the Nit's raise: their aggression is value-heavy.
+    let hole: [Card, Card];
+    let board: Card[];
+    let eqNit: number;
+    let eqBalanced: number;
+    let tries = 0;
+    do {
+      const d = shuffle(makeDeck());
+      hole = [d[0], d[1]];
+      board = d.slice(2, 6);
+      const blocked = new Set<Card>([...hole, ...board]);
+      const nitRaise = rangeToCombos(topPercentRange(4), blocked); // near-nuts only
+      const balancedRaise = rangeToCombos(topPercentRange(11), blocked);
+      const bInts = board.map(cardToInt);
+      eqNit = nitRaise.length ? equityVsRange(comboToInts(hole), bInts, nitRaise, 10, hashSeed(`ex1|${hole.join("")}|${board.join("")}`)).equity : 0.5;
+      eqBalanced = balancedRaise.length ? equityVsRange(comboToInts(hole), bInts, balancedRaise, 10, hashSeed(`ex1b|${hole.join("")}|${board.join("")}`)).equity : 0.5;
+    } while ((eqNit > 0.38 || eqBalanced < 0.42) && ++tries < 80);
+    const label = cardsToLabel(hole[0], hole[1]);
+    const pot = 16;
+    const toCall = 10;
+    const breakEven = toCall / (pot + toCall);
+    return {
+      id: SEQ++,
+      kind: "exploit",
+      source: "heuristic",
+      street: "turn",
+      heroPos: "CO",
+      hole,
+      handLabel: label,
+      board,
+      pot: r1(pot + toCall),
+      toCall,
+      bb: BBV,
+      seats: fullSeats("CO", ORDER.filter((p) => p !== "CO" && p !== "BB"), ["BB"]),
+      frames: [
+        { text: `The BB is a NIT (raises only with near-nut hands). You bet the turn with a decent hand.`, street: "preflop", board: [], pot },
+        { text: `Turn: ${board.join(" ")}. The Nit RAISES to ${toCall + 6} bb.`, street: "turn", board: [...board], pot: r1(pot + toCall) },
+        { text: `Action on you — it costs ${toCall} bb more.`, street: "turn", board: [...board], pot: r1(pot + toCall) },
+      ],
+      options: [
+        { action: "fold", label: "Fold" },
+        { action: "call", label: `Call ${toCall}`, amount: toCall },
+      ],
+      best: "fold",
+      accept: ["fold"],
+      rationale: `THE EXPLOIT: vs a balanced raiser your ${label} has ~${Math.round(eqBalanced * 100)}% equity — enough for the ${Math.round(breakEven * 100)}% price, so balanced play calls. But a Nit's raise means near-nuts: against THAT range you have ~${Math.round(eqNit * 100)}%. Folding "too much" here isn't a leak — it's the profit. When a Nit wakes up, believe them.`,
+      equity: eqNit,
+      potOdds: breakEven,
+      difficulty: 2,
+      gradeRange: [...topPercentRange(4)],
+      gradeRangeTitle: "What a Nit raises the turn with (~4%)",
+      lessonId: "exploits",
+      lessonTitle: "Exploiting the Archetypes",
+      icm: false,
+    };
+  }
+
+  // Template 2: steal relentlessly from a Nit's blind.
+  const hole: [Card, Card] = [deck[0], deck[1]];
+  const label = cardsToLabel(hole[0], hole[1]);
+  const baseline = PREFLOP_100.rfi.SB[label] ?? 0;
+  return {
+    id: SEQ++,
+    kind: "exploit",
+    source: "chart",
+    street: "preflop",
+    heroPos: "SB",
+    hole,
+    handLabel: label,
+    board: [],
+    pot: SB + BBV,
+    toCall: BBV - SB,
+    bb: BBV,
+    seats: fullSeats("SB", ["UTG", "MP", "CO", "BTN"], ["BB"]),
+    frames: [
+      { text: `The BB is a NIT — they defend their blind with only ~12% of hands and fold the rest.`, street: "preflop", board: [], pot: SB + BBV },
+      { text: `Folded to you in the SB with ${label}. Action on you.`, street: "preflop", board: [], pot: SB + BBV },
+    ],
+    options: [
+      { action: "fold", label: "Fold" },
+      { action: "raise", label: "Raise 3 bb", amount: 3 },
+    ],
+    best: "raise",
+    accept: baseline >= 0.5 ? ["raise"] : ["raise"],
+    rationale: `THE EXPLOIT: the balanced SB chart ${baseline >= 0.5 ? `already raises ${label}` : `folds ${label} (it opens ~41% of hands)`} — but this Nit folds their blind ~88% of the time. Raising ANY TWO wins 1.5 bb immediately at a cost of 3, needing only ~67% folds to profit before the flop is even dealt. Against blind-folders, attack relentlessly with everything.`,
+    difficulty: 1,
+    gradeRange: [...topPercentRange(100)],
+    gradeRangeTitle: "The exploit raise-range vs a Nit's blind: any two",
+    lessonId: "exploits",
+    lessonTitle: "Exploiting the Archetypes",
+    icm: false,
   };
 }
 
