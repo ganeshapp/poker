@@ -16,7 +16,7 @@ export const GLOSSARY: Record<string, { term: string; def: string }> = {
   set: { term: "set", def: "Three of a kind made when your pocket pair matches a board card (you hold 99, a 9 flops). Very strong and well disguised." },
   kicker: { term: "kicker", def: "A side card that breaks ties within the same category. A-K beats A-Q on an ace because the king outkicks the queen." },
   equity: { term: "equity", def: "Your share of the pot — how often your hand wins if all remaining cards were dealt out." },
-  potOdds: { term: "pot odds", def: "The price you're laid to call: your call ÷ the final pot. Compare it to your equity." },
+  potOdds: { term: "pot odds", def: "The price the pot offers you on a call: your call ÷ the final pot. Compare it to your equity." },
   EV: { term: "EV", def: "Expected Value — the average chips a decision wins or loses over the long run." },
   SPR: { term: "SPR", def: "Stack-to-Pot Ratio — effective stack ÷ pot on the flop; tells you how committed you are." },
   polarized: { term: "polarized", def: "A range of very strong hands and bluffs with little in between — usually bet large." },

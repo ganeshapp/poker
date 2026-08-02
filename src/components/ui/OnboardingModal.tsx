@@ -33,7 +33,7 @@ const TOUR: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "target",
     title: "Drill like chess puzzles",
-    body: "Short spots with instant feedback: the answer, why, how much a mistake costs in big blinds, and the exact range you were graded against. Anything you miss — and anything the coach flags in play — comes back on a spaced schedule until you've beaten it three times.",
+    body: "Short spots with instant feedback: the answer, why, how much a mistake costs in big blinds, and the exact set of hands (the range) you were graded against. Anything you miss — and anything the coach flags in play — comes back on a spaced schedule until you've beaten it three times.",
   },
   {
     icon: "book",
@@ -50,12 +50,12 @@ const TOUR: { icon: IconName; title: string; body: string }[] = [
 const PLACEMENT: { q: string; options: string[]; answer: number }[] = [
   { q: "Which beats which?", options: ["A flush beats a straight", "A straight beats a flush", "They tie"], answer: 0 },
   { q: "The best seat at the table is…", options: ["The button — you act last after the flop", "Under the gun — you act first", "The big blind — you've already paid"], answer: 0 },
-  { q: "The pot is 10 bb and villain bets 5 bb. To call profitably you need to win about…", options: ["1 time in 4", "1 time in 2", "2 times in 3"], answer: 0 },
+  { q: "The pot is 10 bb and your opponent bets 5 bb. To call profitably you need to win about…", options: ["1 time in 4", "1 time in 2", "2 times in 3"], answer: 0 },
   { q: "A flush draw on the flop (9 outs, two cards to come) has roughly what chance of hitting?", options: ["About 36%", "About 18%", "About 9%"], answer: 0 },
   { q: "Why 3-bet (re-raise) before the flop?", options: ["Value with big hands, plus pressure with the right bluffs", "Only ever with aces", "To see a cheap flop"], answer: 0 },
-  { q: "In a 3-bet pot with a low stack-to-pot ratio, top pair top kicker is usually…", options: ["A stack-off hand", "A fold to any bet", "A hand to keep the pot tiny with"], answer: 0 },
-  { q: "Against a player who never bluffs, their big river bet means you should…", options: ["Fold your bluff-catchers, even 'unexploitably'", "Call at your minimum defense frequency", "Always raise"], answer: 0 },
-  { q: "With 10 big blinds in the small blind, folded to you, a solid strategy is…", options: ["Jam wide — over half your hands", "Only jam premium pairs", "Limp and decide later"], answer: 0 },
+  { q: "In a 3-bet pot with a low stack-to-pot ratio, top pair top kicker is usually…", options: ["A hand worth your whole stack", "A fold to any bet", "A hand to keep the pot tiny with"], answer: 0 },
+  { q: "Against a player who never bluffs, their big river bet means you should…", options: ["Fold hands that only beat bluffs — even if folding is 'exploitable'", "Call just often enough that bluffing can't profit", "Always raise"], answer: 0 },
+  { q: "With 10 big blinds in the small blind, folded to you, a solid strategy is…", options: ["Go all-in with over half your hands", "Only go all-in with premium pairs", "Just call the minimum and decide later"], answer: 0 },
 ];
 
 function shuffledPerms(): number[][] {

@@ -148,7 +148,7 @@ export function EquityCalculator() {
           )}
         </div>
         <div className="flex flex-col items-center gap-2">
-          <div className="self-start text-sm font-semibold text-[var(--text)]">Villain range</div>
+          <div className="self-start text-sm font-semibold text-[var(--text)]">Opponent's range</div>
           <RangeMatrix value={vill} onChange={(s) => { setVill(s); setResult(null); }} size={320} />
           <div className="flex w-full items-center justify-between text-[0.72rem] text-faint">
             <button className="hover:text-[var(--text)]" onClick={() => { setVill(new Set(ALL)); setResult(null); }}>Any two</button>
@@ -227,7 +227,7 @@ export function EquityCalculator() {
           {blockerInfo && blockerInfo.removed > 0 && (
             <div className="mt-2 text-[0.74rem] text-muted">
               <span className="font-semibold text-gold-light">Blockers:</span> your cards remove{" "}
-              {blockerInfo.removed} of {blockerInfo.all} villain combos (
+              {blockerInfo.removed} of {blockerInfo.all} opponent combos (
               {fmtPct(blockerInfo.removed / blockerInfo.all)}) — holding their cards makes their strong
               hands rarer.
             </div>
@@ -243,7 +243,7 @@ export function EquityCalculator() {
           )}
           {vill.size > 0 && (
             <RangeBoardBreakdown
-              title="Villain's range on this board"
+              title="Opponent's range on this board"
               range={vill}
               board={board}
               dead={mode === "hand" ? heroCards : []}

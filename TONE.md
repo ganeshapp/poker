@@ -21,6 +21,26 @@ substance; always lead with language a first-week player understands.
 
 - **No unexplained jargon at layer 1.** "Equity", "pot odds", "SPR",
   "range" belong to layers 2–3, or get a hover definition.
+- **Say the idea in ordinary words first — everywhere, all layers.**
+  User test result: nobody understood "You're laying a caller 20%".
+  Insider vocabulary reads as showing off and erodes trust. If a term
+  is worth teaching, define it in the same breath it first appears
+  ("just calling the minimum instead of raising — players call this
+  *limping*"), then it may be used with hover definitions. If it isn't
+  worth teaching, don't use it. Translating must preserve the full
+  poker substance — re-word the idea, never water it down.
+
+  Banned outright (never taught, pure insider-speak):
+  | Never write | Write instead |
+  |---|---|
+  | "laying odds / laying a caller X%" | "their call only needs to win X% to make money" |
+  | "villain" | "your opponent" / the bot's name |
+  | "hero" (user-facing) | "you" |
+  | "stab / barrel / fire" | "bet" / "bet again" |
+  | "air / nutted / the nuts" (unglossed) | "nothing" / "a monster hand" / "the best possible hand" |
+  | "OOP / IP" (unglossed) | "acting first / acting last" |
+  | "denies equity" (unglossed) | "makes drawing hands pay too much to keep chasing" |
+  | "stack off" (unglossed) | "put your whole stack in" |
 - **Frequencies over percentages at layer 1**: "wins about 3 times in
   10", not "31% equity". Use `fmtTimes()` from `src/lib/format.ts`.
 - **Judge the decision, never the person.** "This call loses money over

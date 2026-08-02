@@ -110,7 +110,7 @@ export const LEVELS: Level[] = [
             <H>The six seats</H>
             <P>
               Each seat has a name and acts in a fixed order. The dealer <b>button</b> is the best seat
-              because it acts last on every post-flop street. Moving clockwise from it, the{" "}
+              because it acts last in every betting round after the flop. Moving clockwise from it, the{" "}
               <b>small blind</b> and <b>big blind</b> post forced bets, then play runs through the early
               and middle seats to the cutoff and back to the button. (Hover the dotted terms for a
               definition; the full glossary lives in Practice → Quick Reference.)
@@ -119,8 +119,8 @@ export const LEVELS: Level[] = [
               {[
                 { a: "UTG", n: "Under the Gun", k: "Earliest — acts first, play tightest" },
                 { a: "MP", n: "Middle Position", k: "Early / middle" },
-                { a: "CO", n: "Cutoff", k: "Late — open wider" },
-                { a: "BTN", n: "Button (dealer)", k: "Latest — best seat, widest range" },
+                { a: "CO", n: "Cutoff", k: "Late — raise more hands" },
+                { a: "BTN", n: "Button (dealer)", k: "Latest — best seat, most hands playable" },
                 { a: "SB", n: "Small Blind", k: "Forced bet, acts first post-flop" },
                 { a: "BB", n: "Big Blind", k: "Forced bet, last to act pre-flop" },
               ].map((s) => (
@@ -181,8 +181,8 @@ export const LEVELS: Level[] = [
         body: () => (
           <>
             <Lead>
-              The 169 distinct starting hands fit neatly into a 13×13 grid — the language pros use to
-              talk about ranges.
+              The 169 distinct starting hands fit neatly into a 13×13 grid — the standard way to describe a range:
+              the set of hands a player would choose to play.
             </Lead>
             <P>
               Pairs run down the diagonal. Suited hands sit in the upper-right triangle (e.g. AKs), and
@@ -192,7 +192,7 @@ export const LEVELS: Level[] = [
             <Diagram
               range={topPercentRange(15)}
               title="A tight ~15% range"
-              note="Highlighted = hands you'd play. Notice how strong pairs and big suited broadways dominate."
+              note="Highlighted = hands you'd play. Notice how strong pairs and big suited cards (A, K, Q, J, 10) dominate."
             />
           </>
         ),
@@ -203,7 +203,7 @@ export const LEVELS: Level[] = [
         minutes: 6,
         body: () => (
           <>
-            <Lead>How wide you open should grow as you get closer to the button.</Lead>
+            <Lead>How wide you open (raise when no one has bet yet) should grow as you get closer to the button.</Lead>
             <div className="grid gap-4 lg:grid-cols-2">
               <Diagram range={chartToSet(PREFLOP_100.rfi.UTG)} title="UTG open · ~15%" />
               <Diagram range={chartToSet(PREFLOP_100.rfi.BTN)} title="Button open · ~45%" />
@@ -223,12 +223,12 @@ export const LEVELS: Level[] = [
           <>
             <Lead>
               A 3-bet is a re-raise of an opener. Used well it builds pots with your best hands and steals
-              dead money with the right bluffs.
+              the chips already in the pot with the right bluffs.
             </Lead>
             <Diagram
               range={chartToSet(PREFLOP_100.vsRfi.BTN_vs_CO.threebet, 0.4)}
               title="BTN 3-bet vs a CO open · ~5%"
-              note="Big pairs and AK for value, plus small suited aces as bluffs — they block AA/AK and make the nut flush."
+              note="Big pairs and AK to build the pot, plus small suited aces as bluffs — your ace makes AA/AK less likely, and can still make the best possible flush."
             />
             <P>
               Against a tight opener (a Nit), 3-bet only your premiums — they fold everything else and
@@ -267,7 +267,7 @@ export const LEVELS: Level[] = [
             </div>
             <P>
               The gap tells the story. VPIP ≈ PFR is an aggressive, raise-or-fold player. A wide gap (e.g.
-              45/7) is a passive Calling Station who limps and calls. Here's how the four bots look:
+              45/7) is a passive Calling Station who limps (just calls the minimum instead of raising) and calls. Here's how the four bots look:
             </P>
             <div className="space-y-2">
               {(["TAG", "LAG", "Nit", "Station"] as const).map((a) => {
@@ -322,14 +322,14 @@ export const LEVELS: Level[] = [
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-[var(--line)] bg-ink-850 p-4">
                 <H>Dry boards</H>
-                <P>K♠ 7♦ 2♣ — disconnected, rainbow. Few draws exist, so the pre-flop raiser can c-bet small and often.</P>
+                <P>K♠ 7♦ 2♣ — disconnected, three different suits. Few draws exist, so the pre-flop raiser can follow up with a small bet very often.</P>
               </div>
               <div className="rounded-xl border border-[var(--line)] bg-ink-850 p-4">
                 <H>Wet boards</H>
                 <P>J♥ T♥ 9♠ — connected and suited. Many draws hit it; bet bigger with strong hands and check more marginal ones.</P>
               </div>
             </div>
-            <Callout>The wetter the board, the larger and more polarised your bets should be.</Callout>
+            <Callout>The wetter the board, the larger your bets should be — and the more they should be strong hands or bluffs, not the in-between.</Callout>
           </>
         ),
       },
@@ -409,7 +409,7 @@ export const LEVELS: Level[] = [
                 { m: "Dominated (AK vs AQ)", e: "~73% / 27%" },
                 { m: "Big suited vs pair (AKs vs QQ)", e: "~46% / 54%" },
                 { m: "Pair vs one overcard (99 vs A8)", e: "~70% / 30%" },
-                { m: "Set over set, flopped (post-flop cooler)", e: "~90% / 10%" },
+                { m: "Set over set, flopped (an unavoidable collision)", e: "~90% / 10%" },
               ].map((x) => (
                 <div key={x.m} className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-ink-850 px-3 py-2">
                   <span className="text-[0.86rem] text-[var(--text)]">{x.m}</span>
@@ -418,9 +418,9 @@ export const LEVELS: Level[] = [
               ))}
             </div>
             <P>
-              The first five are pre-flop all-in match-ups. The last is a post-flop cooler: a{" "}
+              The first five are pre-flop all-in match-ups. The last is an unavoidable post-flop collision: a{" "}
               <Term id="set">set</Term> is a pocket pair that pairs the board, and when two players both
-              flop sets the loser is nearly drawing dead (just the one case card for quads), hence ~90/10.
+              flop sets the loser has almost no way to win (only the last card of their rank can make four-of-a-kind), hence ~90/10.
             </P>
             <Callout>Shortcuts: races ≈ 50/50, domination ≈ 70/30, a pair over a pair ≈ 80/20.</Callout>
             <Quiz
@@ -449,7 +449,7 @@ export const LEVELS: Level[] = [
         body: () => (
           <>
             <Lead>
-              Calling is profitable when your equity beats the price you're being laid. Two formulas run
+              Calling is profitable when your equity beats the price the pot is offering you. Two formulas run
               the whole decision.
             </Lead>
             <H>From odds to a decision</H>
@@ -476,7 +476,7 @@ export const LEVELS: Level[] = [
                   explain: "You call 5 to win 15 (10 + their 5). Break-even = 5 / (10 + 5 + 5) = 5/20 = 25%.",
                 },
                 {
-                  q: "A pot-sized bet always lays you what pot odds to call?",
+                  q: "A pot-sized bet always offers you what pot odds to call?",
                   options: ["2-to-1 (need 33%)", "1-to-1 (need 50%)", "3-to-1 (need 25%)"],
                   answer: 0,
                   explain: "Against a pot-sized bet you're getting 2-to-1, so you need ~33% equity to break even.",
@@ -509,7 +509,7 @@ export const LEVELS: Level[] = [
               the money goes in, shade toward folding even when the immediate price looks okay.
             </P>
             <Callout>
-              Implied odds reward hands that make the nuts (sets, straights, flushes). Reverse-implied
+              Implied odds reward hands that can make the best possible hand (sets, straights, flushes). Reverse-implied
               odds punish hands that make a second-best hand (weak aces, dominated draws).
             </Callout>
             <Quiz
@@ -522,9 +522,9 @@ export const LEVELS: Level[] = [
                 },
                 {
                   q: "Which hand suffers most from reverse-implied odds?",
-                  options: ["The nut flush draw", "A king-high flush draw against aggression", "A set"],
+                  options: ["The ace-high flush draw", "A king-high flush draw against aggression", "A set"],
                   answer: 1,
-                  explain: "A non-nut flush draw can complete and still lose a big pot to a higher flush — classic reverse-implied odds.",
+                  explain: "A flush draw without the ace can complete and still lose a big pot to a higher flush — classic reverse-implied odds.",
                 },
               ]}
             />
@@ -537,11 +537,11 @@ export const LEVELS: Level[] = [
         minutes: 6,
         body: () => (
           <>
-            <Lead>Your bet size should follow your goal: get value, deny equity, or fold out better hands.</Lead>
+            <Lead>Your bet size should follow your goal: get value, push out hands that could catch up, or fold out better hands.</Lead>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-[var(--line)] bg-ink-850 p-4">
                 <H>Polarized → big</H>
-                <P>When your range is the nuts or a bluff (and little in between), bet large — you want max value and max fold pressure.</P>
+                <P>When your range is the best possible hand or a bluff (and little in between), bet large — you want max value and max fold pressure.</P>
               </div>
               <div className="rounded-xl border border-[var(--line)] bg-ink-850 p-4">
                 <H>Merged → small</H>
@@ -555,7 +555,7 @@ export const LEVELS: Level[] = [
             </P>
             <BluffCalculator />
             <Callout>
-              Pure-bluff rule of thumb: a pot-sized bet needs villain to fold about 50% of the time; a
+              Pure-bluff rule of thumb: a pot-sized bet needs your opponent to fold about 50% of the time; a
               half-pot bet about 33%; a third-pot about 25%.
             </Callout>
             <Quiz
@@ -567,10 +567,10 @@ export const LEVELS: Level[] = [
                   explain: "Risk = pot, reward = pot, so break-even fold frequency = bet/(bet+pot) = 50%.",
                 },
                 {
-                  q: "With a polarized range (nuts or bluffs), you should bet…",
+                  q: "With a polarized range (best possible hands or bluffs), you should bet…",
                   options: ["Small", "Big"],
                   answer: 1,
-                  explain: "Polarized ranges want big sizes for maximum value and fold equity.",
+                  explain: "Polarized ranges want big sizes — maximum value when called, maximum pressure to fold.",
                 },
               ]}
             />
@@ -620,13 +620,13 @@ export const LEVELS: Level[] = [
               exploitable" folding is actually correct against them.
             </P>
             <Callout title="Key idea">
-              MDF is a shield, not a hammer. Reach for it when someone is barreling relentlessly;
+              MDF is a shield, not a hammer. Reach for it when someone keeps betting at you street after street;
               ignore it when the bettor is honest. Knowing WHICH question to ask is the skill.
             </Callout>
             <Quiz
               questions={[
                 {
-                  q: "The pot is 12 bb and villain bets 6 bb (half pot). Roughly how often must you continue so they can't bluff any two cards profitably?",
+                  q: "The pot is 12 bb and your opponent bets 6 bb (half pot). Roughly how often must you continue so they can't bluff any two cards profitably?",
                   options: ["About 67%", "About 50%", "About 33%"],
                   answer: 0,
                   explain: "MDF = pot / (pot + bet) = 12 / 18 = 67%. Fold more than a third and any-two bluffs profit.",
@@ -683,7 +683,7 @@ export const LEVELS: Level[] = [
                   q: "Which hand type makes the best check-raise BLUFF on a 8♠7♠3♦ flop?",
                   options: ["A♠9♠ (flush draw + overcard)", "K♦Q♣ (two overcards, no draw)", "3♣3♥ (bottom set)"],
                   answer: 0,
-                  explain: "A set is a value raise, not a bluff. The nut flush draw has huge equity when called AND wins outright when they fold — the perfect semi-bluff. KQ-high has too little to fall back on.",
+                  explain: "A set is a value raise, not a bluff. The ace-high flush draw has huge equity when called AND wins outright when they fold — the perfect semi-bluff (a bluff that can still improve to the best hand). KQ-high has too little to fall back on.",
                 },
                 {
                   q: "Why is the check-raise strongest OUT of position?",
@@ -716,7 +716,7 @@ export const LEVELS: Level[] = [
             </Lead>
             <P>
               A blocker is a card in your hand that removes combos from your opponent's range. Holding the
-              A♠ on a flush-draw board means they can't have the nut-flush draw with the A♠ — fewer of
+              A♠ on a flush-draw board means they can't have the ace-high flush draw (you hold the A♠) — fewer of
               their bluffs and value hands exist, which makes your bluffs and calls work more often.
             </P>
             <H>Worked example</H>
@@ -780,25 +780,25 @@ export const LEVELS: Level[] = [
               button range is huge. 2. <b>Subtract on every action</b>: a raise keeps value plus chosen
               bluffs; a call removes both the very top (they'd raise) and the bottom (they'd fold). 3.{" "}
               <b>Apply the board</b>: ask "which of their hands improved, and would they keep betting or
-              calling it?" Remove the air they'd give up. 4. <b>Compare</b> your hand to the handful of
+              calling it?" Remove the complete misses they'd give up. 4. <b>Compare</b> your hand to the handful of
               combos left — not to one imagined holding.
             </P>
             <div className="grid gap-4 lg:grid-cols-3">
               <Diagram range={topPercentRange(40)} title="Pre-flop: opens ~40%" />
               <Diagram range={topPercentRange(20)} title="Continues flop ~20%" />
-              <Diagram range={topPercentRange(10)} title="Barrels turn ~10%" />
+              <Diagram range={topPercentRange(10)} title="Bets again on turn ~10%" />
             </div>
             <Callout>
-              By the river, big aggressive lines are often <b>polarized</b> — the nuts or a bluff. Don't
-              pay off the value half with a bluff-catcher unless the price is right.
+              By the river, big aggressive lines are often <b>polarized</b> — the best possible hand or a bluff. Don't
+              pay off the value half with a hand that only beats bluffs unless the price is right.
             </Callout>
             <Quiz
               questions={[
                 {
-                  q: "A flat call (rather than a raise) usually removes which hands from a range?",
+                  q: "A call (rather than a raise) usually removes which hands from a range?",
                   options: ["Only the weakest hands", "Both the strongest (would raise) and the weakest (would fold)", "Nothing — calls are random"],
                   answer: 1,
-                  explain: "Calling caps a range: the nuts tend to raise, trash tends to fold, leaving the middle.",
+                  explain: "Calling trims a range at both ends: the strongest hands raise, the weakest fold, leaving the middle.",
                 },
                 {
                   q: "A tight player check-raises the river. Their range is best described as…",
@@ -823,7 +823,7 @@ export const LEVELS: Level[] = [
                 const c = ARCHETYPES[a];
                 const advice: Record<string, string> = {
                   TAG: "Solid and balanced. Respect their raises; pick spots, don't bluff into strength.",
-                  LAG: "Hyper-aggressive. Trap with strong hands and let them barrel into you.",
+                  LAG: "Hyper-aggressive. Trap with strong hands and let them keep betting into you.",
                   Nit: "Folds too much. Steal relentlessly, but believe them when they finally raise.",
                   Station: "Calls everything. Never bluff — value bet thin and bet big with strong hands.",
                 };
@@ -905,7 +905,7 @@ export const LEVELS: Level[] = [
           <>
             <Lead>
               Stack-to-Pot Ratio (SPR) = the effective stack divided by the pot on the flop. One number
-              tells you how committed you are and which hands are worth stacking off.
+              tells you how committed you are and which hands are worth stacking off (putting your whole stack in).
             </Lead>
             <div className="space-y-2">
               {[
@@ -921,7 +921,7 @@ export const LEVELS: Level[] = [
             </div>
             <P>
               SPR is set <b>before</b> the flop: more raises and callers build a bigger pot and shrink the
-              SPR, widening what you'll commit. 3-bet pots are low-SPR (commit lighter); limped,
+              SPR, widening what you'll commit. 3-bet pots are low-SPR (commit lighter); limped (everyone just called the minimum) and
               single-raised pots are high-SPR (need a stronger hand to stack off).
             </P>
             <Callout>Decide your stack-off threshold on the flop from the SPR — then stop agonising street by street.</Callout>
@@ -957,7 +957,7 @@ export const LEVELS: Level[] = [
             <P>
               After a 3-bet and call, the pot is ~20 bb with ~90 bb behind — an SPR around 4-5 instead
               of 12+. That changes everything: <b>top pair good kicker becomes a stack-off hand</b>{" "}
-              where in a single-raised pot it's a pot-controller. Meanwhile hands that love deep stacks
+              where in a single-raised pot you'd keep the pot small with it. Meanwhile hands that love deep stacks
               (small pairs hunting sets, suited connectors) lose value — there isn't enough money
               behind to pay off their big hits.
             </P>
@@ -1025,7 +1025,7 @@ export const LEVELS: Level[] = [
                   q: "Which hand realizes its raw equity BEST?",
                   options: ["T♠9♠ on the button", "T♠9♠ in the small blind", "K♣3♦ in the small blind"],
                   answer: 0,
-                  explain: "Suited, connected, and in position: it sees cheap cards, wins extra pots with bluffs, and escapes cheaply when beaten. The same hand OOP realizes less; K3o OOP is the worst of all worlds.",
+                  explain: "Suited, connected, and in position: it sees cheap cards, wins extra pots with bluffs, and escapes cheaply when beaten. The same hand out of position realizes less; K3o out of position is the worst of all worlds.",
                 },
                 {
                   q: "You're getting exactly break-even pot odds out of position with a weak offsuit hand. The call is…",
@@ -1050,7 +1050,7 @@ export const LEVELS: Level[] = [
             </Lead>
             <H>The turn: the pressure street</H>
             <P>
-              Calling the flop is cheap; calling the turn is not. Barrel turns that improve your range
+              Calling the flop is cheap; calling the turn is not. Bet again on turns that improve your range
               or dent theirs (overcards to their pairs, completing YOUR draws). With one card to come,
               draws are worth roughly <b>2% per out</b> — half their flop value — so the price to chase
               gets worse exactly as the bets get bigger. That's why the coach's turn verdicts flip to
@@ -1072,7 +1072,7 @@ export const LEVELS: Level[] = [
             <Quiz
               questions={[
                 {
-                  q: "You river a weak top pair. Villain (a Nit who never bluffs) bets pot. Your hand beats bluffs but loses to all their value hands. Call or fold?",
+                  q: "You river a weak top pair. Your opponent (a Nit who never bluffs) bets the pot. Your hand beats bluffs but loses to all their value hands. Call or fold?",
                   options: ["Fold — no bluffs means no bluff-catching", "Call — you need to defend your MDF", "Raise as a bluff"],
                   answer: 0,
                   explain: "A bluff-catcher is only worth calling if there are bluffs to catch. Against a player who has them, the same call is fine — the player, not the formula, decides river calls.",

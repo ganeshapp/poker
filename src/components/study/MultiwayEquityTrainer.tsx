@@ -124,7 +124,7 @@ export function MultiwayEquityTrainer() {
 
       <p className="text-[0.78rem] leading-relaxed text-faint">
         Each extra opponent is another chance someone holds a better hand, so equity falls — fast for
-        one-pair hands, more slowly for the nuts. This is why you tighten up and value-bet more carefully
+        one-pair hands, more slowly for the nuts (the best possible hand). This is why you tighten up and value-bet more carefully
         the more players are in the pot.
       </p>
     </div>

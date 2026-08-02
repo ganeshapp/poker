@@ -44,7 +44,7 @@ export function RangeExplorer() {
       <p className="text-[0.82rem] leading-relaxed text-muted">
         Load a preset to see how a target percentage maps to actual cells, or paint your own and watch
         the combo count. There are 1,326 total combos; that running count is exactly what the EV Coach
-        means when it says a villain's range is "≈ 450 combos."
+        means when it says an opponent's range is "≈ 450 combos."
       </p>
     </div>
   );
