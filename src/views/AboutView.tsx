@@ -192,8 +192,9 @@ export function AboutView() {
               <span>
                 <span className="font-semibold text-[var(--text)]">Push/fold drills</span> use Nash
                 equilibrium tables we computed ourselves (chip-EV, no antes, one caller at a time) —
-                mixed-frequency hands accept either answer, like the real equilibrium does. Ante and
-                ICM variants are on the roadmap.
+                mixed-frequency hands accept either answer, like the real equilibrium does. A third of
+                push/fold reps are ICM bubble spots — solved the same way, but in tournament money
+                instead of chips. Ante variants are still to come.
               </span>
             </li>
           </ul>
@@ -210,7 +211,7 @@ export function AboutView() {
               "Configurable table — stack depths, 9-max, antes",
               "Desktop auto-update — one-click new versions",
               "Import your real online hand histories for coaching",
-              "ICM & tournament drills",
+              "Install as an app (PWA) on the web",
             ].map((x) => (
               <li key={x} className="flex gap-2">
                 <Icon name="arrow-right" size={14} className="mt-0.5 shrink-0 text-gold" />
