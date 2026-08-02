@@ -1,6 +1,6 @@
 [package]
 name = "all-in"
-version = "1.0.0"
+version = "1.1.0"
 description = "All-In — Poker Dojo"
 authors = ["you"]
 edition = "2021"
