@@ -7,7 +7,9 @@ import { Icon } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Modal } from "@/components/ui/Dialog";
 import { HandReplayModal } from "@/components/play/HandReplayModal";
-import { loadRecentHands, exportBackup } from "@/db/stats";
+import { loadRecentHands, exportBackup, persistImportedHands } from "@/db/stats";
+import { parsePokerStars, analyzeImported } from "@/lib/hhImport";
+import { useLeaks } from "@/store/leakStore";
 import { useGoals, metGoal } from "@/store/goalStore";
 import { useNotes, handKey } from "@/store/noteStore";
 import { HandNoteEditor } from "@/components/stats/HandNoteEditor";
@@ -33,6 +35,25 @@ export function StatsView() {
   const [recent, setRecent] = useState<HHHand[]>([]);
   const [replay, setReplay] = useState<HHHand | null>(null);
   const [noteHand, setNoteHand] = useState<HHHand | null>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const onImportFile = async (file: File) => {
+    const text = await file.text();
+    const { hands, skipped } = parsePokerStars(text);
+    if (hands.length === 0) {
+      setImportMsg(`Couldn't find any PokerStars-style hands in that file${skipped ? ` (${skipped} blocks unparseable)` : ""}.`);
+      return;
+    }
+    await persistImportedHands(hands.map((h) => JSON.stringify(h)));
+    const { reviewed, leaks } = analyzeImported(hands);
+    const addLeak = useLeaks.getState().add;
+    for (const l of leaks) addLeak(l);
+    setImportMsg(
+      `Imported ${hands.length} hand${hands.length === 1 ? "" : "s"}${skipped ? ` (${skipped} skipped)` : ""} · reviewed ${reviewed} of your calls · ${leaks.length ? `${leaks.length} questionable one${leaks.length === 1 ? "" : "s"} added to the Review queue` : "no clear mistakes found"}. Imported hands never count toward your play stats.`,
+    );
+    setReloadKey((k) => k + 1);
+  };
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const handNotes = useNotes((s) => s.notes);
 
@@ -48,7 +69,7 @@ export function StatsView() {
       }
       setRecent(parsed);
     });
-  }, [handsPlayed]);
+  }, [handsPlayed, reloadKey]);
 
   const netBb = netChips / bb;
   const bb100 = handsPlayed > 0 ? (netBb / handsPlayed) * 100 : 0;
@@ -318,9 +339,29 @@ export function StatsView() {
 
         {/* Recent hands — replayable across restarts, with notes & tags */}
         <Card className="mt-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
-            <Icon name="play" size={16} className="text-gold" /> Recent hands
+          <div className="mb-3 flex items-center justify-between">
+            <span className="flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
+              <Icon name="play" size={16} className="text-gold" /> Recent hands
+            </span>
+            <label className="cursor-pointer rounded-lg border border-[var(--line)] bg-ink-700 px-2.5 py-1 text-[0.72rem] font-semibold text-[var(--text)] transition hover:bg-ink-600">
+              Import hands (.txt)
+              <input
+                type="file"
+                accept=".txt,text/plain"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onImportFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
           </div>
+          {importMsg && (
+            <div className="mb-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-[0.76rem] leading-relaxed text-info">
+              {importMsg}
+            </div>
+          )}
           {(() => {
             const allTags = [...new Set(Object.values(handNotes).flatMap((n) => n.tags))];
             const rows = tagFilter
@@ -371,6 +412,9 @@ export function StatsView() {
                           <div className="flex items-center justify-between gap-2">
                             <button onClick={() => setReplay(h)} className="flex-1 text-left text-[var(--text)] hover:text-gold-light">
                               Hand #{h.id} · {new Date(h.startedAt).toLocaleString()}
+                              {(h as HHHand & { imported?: boolean }).imported && (
+                                <span className="ml-2 rounded-full bg-info/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-info">imported</span>
+                              )}
                             </button>
                             <span className={cx("mono", h.heroNet >= 0 ? "text-good" : "text-bad")}>
                               {fmtSigned(h.heroNet / h.bb)} bb
