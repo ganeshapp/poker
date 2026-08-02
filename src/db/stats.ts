@@ -49,7 +49,7 @@ const HISTORY_CAP = 800;
 /** Replayable hands kept in the localStorage fallback (quota-bound;
     SQLite keeps every hand). */
 const LS_HANDS_CAP = 100;
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 type Backend = "sqlite" | "local";
 let backend: Backend | null = null;
@@ -88,6 +88,15 @@ async function migrate() {
     // v3: whether hero saw the flop (WTSD/W$SD denominators).
     try {
       await db.execute(`ALTER TABLE hand_history ADD COLUMN saw_flop INTEGER;`);
+    } catch {
+      /* exists */
+    }
+  }
+  if (v < 4) {
+    // v4: imported hands live alongside played ones but never count
+    // toward play stats.
+    try {
+      await db.execute(`ALTER TABLE hand_history ADD COLUMN source TEXT;`);
     } catch {
       /* exists */
     }
@@ -170,7 +179,7 @@ export async function loadStats(): Promise<StatsSnapshot> {
       big_blind: number;
     }[];
     const hist = (await db.select(
-      `SELECT n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, ts FROM hand_history ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
+      `SELECT n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, ts FROM hand_history WHERE source IS NULL ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
     )) as Record<string, unknown>[];
     const guesses = (await db.select(
       `SELECT accuracy, archetype, street, ts FROM range_guess ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
@@ -234,6 +243,34 @@ function readLocalHands(): string[] {
     /* ignore */
   }
   return [];
+}
+
+/** Persist imported hands: replayable payloads only — they never touch
+    play statistics (source='import', zeroed aggregates). */
+export async function persistImportedHands(handJsons: string[]): Promise<number> {
+  const b = await ensureBackend();
+  if (b === "sqlite") {
+    try {
+      for (const j of handJsons) {
+        await db.execute(
+          `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, hand_json, source, ts) VALUES (0, 0, 0, 0, 0, '[]', NULL, NULL, ?, 'import', ?);`,
+          [j, Date.now()],
+        );
+      }
+      return handJsons.length;
+    } catch (e) {
+      noteError("SQLite import write failed", e);
+      backend = "local";
+    }
+  }
+  try {
+    const hands = readLocalHands();
+    hands.unshift(...handJsons);
+    localStorage.setItem(LS_HANDS_KEY, JSON.stringify(hands.slice(0, LS_HANDS_CAP)));
+    return handJsons.length;
+  } catch {
+    return 0;
+  }
 }
 
 /** Most-recent-first serialized hands for the replayer. */
