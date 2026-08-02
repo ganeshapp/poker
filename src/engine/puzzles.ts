@@ -5,6 +5,7 @@ import { topPercentRange, chartWidth } from "./ranges.ts";
 import { equityVsRange, equityVsRandom, comboToInts, hashSeed } from "./equity.ts";
 import { NASH_SHOVE, NASH_CALL, type PushFoldPos } from "../data/pushfold.ts";
 import { PREFLOP_100 } from "../data/preflop.ts";
+import { ICM_SCENARIOS } from "../data/icmPushfold.ts";
 
 /* ==================================================================
    Drills — procedural puzzle generator + heuristic grader.
@@ -75,6 +76,8 @@ export interface Puzzle {
   /** Study lesson that teaches this spot's concept. */
   lessonId?: string;
   lessonTitle?: string;
+  /** ICM bubble spot (graded in tournament $EV, not chips). */
+  icm?: boolean;
 }
 
 const ORDER: Position[] = ["UTG", "MP", "CO", "BTN", "SB", "BB"];
@@ -772,7 +775,108 @@ function gradeFromFreq(
   return { best, accept, rationale };
 }
 
+/** ICM bubble push/fold: 4 players, 3 paid — graded in $EV. */
+function generateIcmPushFold(): Puzzle {
+  const deck = shuffle(makeDeck());
+  const hole: [Card, Card] = [deck[0], deck[1]];
+  const label = cardsToLabel(hole[0], hole[1]);
+  const sc = ICM_SCENARIOS[rint(0, ICM_SCENARIOS.length - 1)];
+  const heroIsSB = Math.random() < 0.55;
+  const [sbStack, bbStack, o1, o2] = sc.stacks;
+
+  const icmNote = `Bubble: 4 players left, 3 get paid (50/30/20). Chips you might WIN are worth less than the chips you'd LOSE — busting here costs everything.`;
+
+  if (heroIsSB) {
+    const freq = sc.jam[label] ?? 0;
+    const { best, accept, rationale } = gradeFromFreq(
+      freq,
+      label,
+      sbStack,
+      "raise",
+      "jam",
+      `${sc.name}: folded to you in the SB with ${sbStack} bb (ICM, $EV). ${icmNote}`,
+    );
+    return {
+      id: SEQ++,
+      kind: "pushfold",
+      source: "chart",
+      street: "preflop",
+      heroPos: "SB",
+      hole,
+      handLabel: label,
+      board: [],
+      pot: SB + BBV,
+      toCall: BBV - SB,
+      bb: BBV,
+      seats: fullSeats("SB", ["UTG", "MP"], ["BB"]),
+      frames: [
+        { text: `${sc.name} — stacks: you (SB) ${sbStack} bb, BB ${bbStack} bb, others ${o1}/${o2} bb.`, street: "preflop", board: [], pot: SB + BBV },
+        { text: sc.blurb, street: "preflop", board: [], pot: SB + BBV },
+        { text: `Folded to you in the SB. Shove or fold?`, street: "preflop", board: [], pot: SB + BBV },
+      ],
+      options: [
+        { action: "fold", label: "Fold" },
+        { action: "raise", label: `Shove ${sbStack} bb`, amount: sbStack },
+      ],
+      best,
+      accept,
+      rationale,
+      difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
+      gradeRange: chartLabels05(sc.jam),
+      gradeRangeTitle: `ICM SB jamming range — ${sc.name}`,
+      lessonId: "spr",
+      lessonTitle: "SPR & Commitment",
+      icm: true,
+    };
+  }
+
+  const freq = sc.call[label] ?? 0;
+  const { best, accept, rationale } = gradeFromFreq(
+    freq,
+    label,
+    bbStack,
+    "call",
+    "call",
+    `${sc.name}: the SB (${sbStack} bb) jams into your BB (${bbStack} bb) on the bubble (ICM, $EV). ${icmNote}`,
+  );
+  const effective = Math.min(sbStack, bbStack);
+  return {
+    id: SEQ++,
+    kind: "pushfold",
+    source: "chart",
+    street: "preflop",
+    heroPos: "BB",
+    hole,
+    handLabel: label,
+    board: [],
+    pot: r1(SB + BBV + effective),
+    toCall: r1(effective - BBV),
+    bb: BBV,
+    seats: fullSeats("BB", ["UTG", "MP"], ["SB"]),
+    frames: [
+      { text: `${sc.name} — stacks: SB ${sbStack} bb, you (BB) ${bbStack} bb, others ${o1}/${o2} bb.`, street: "preflop", board: [], pot: SB + BBV },
+      { text: `${sc.blurb}`, street: "preflop", board: [], pot: SB + BBV },
+      { text: `The SB moves all-in. Call for your tournament life, or fold?`, street: "preflop", board: [], pot: r1(SB + BBV + effective) },
+    ],
+    options: [
+      { action: "fold", label: "Fold" },
+      { action: "call", label: `Call ${r1(effective - BBV)} bb`, amount: r1(effective - BBV) },
+    ],
+    best,
+    accept,
+    rationale,
+    difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
+    gradeRange: chartLabels05(sc.call),
+    gradeRangeTitle: `ICM BB calling range — ${sc.name}`,
+    lessonId: "spr",
+    lessonTitle: "SPR & Commitment",
+    icm: true,
+  };
+}
+
 export function generatePushFold(): Puzzle {
+  // A third of push/fold reps are ICM bubbles.
+  if (Math.random() < 0.33) return generateIcmPushFold();
   const deck = shuffle(makeDeck());
   const hole: [Card, Card] = [deck[0], deck[1]];
   const label = cardsToLabel(hole[0], hole[1]);
