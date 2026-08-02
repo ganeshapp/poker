@@ -129,7 +129,7 @@ export function ActionBar() {
 
       <div className="flex flex-1 items-center justify-end gap-3">
         {!session.active && (
-          <Button size="lg" onClick={newSession} className="px-8">
+          <Button size="lg" onClick={() => newSession()} className="px-8">
             <Icon name="play" size={16} /> Start session
           </Button>
         )}

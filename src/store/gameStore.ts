@@ -92,7 +92,7 @@ interface GameStore {
   rangeView: { name: string; range: HandLabel[] } | null;
   lastActorSeat: number | null;
 
-  newSession: () => void;
+  newSession: (opts?: TableOptions) => void;
   endSession: () => void;
   closeSummary: () => void;
   deal: () => void;
@@ -109,7 +109,30 @@ interface GameStore {
   setSettings: (p: Partial<Settings>) => void;
 }
 
-const CONFIG: GameConfig = { seats: 6, startingStack: 2000, smallBlind: 10, bigBlind: 20 };
+const BASE_CONFIG: GameConfig = { seats: 6, startingStack: 2000, smallBlind: 10, bigBlind: 20 };
+const TABLE_KEY = "allin.table.v1";
+
+export interface TableOptions {
+  seats: 2 | 6 | 9;
+  ante: number; // chips
+}
+
+export function loadTableOptions(): TableOptions {
+  try {
+    const v = JSON.parse(localStorage.getItem(TABLE_KEY) || "{}");
+    return { seats: v.seats === 2 || v.seats === 9 ? v.seats : 6, ante: v.ante === 5 ? 5 : 0 };
+  } catch {
+    return { seats: 6, ante: 0 };
+  }
+}
+
+function saveTableOptions(o: TableOptions) {
+  try {
+    localStorage.setItem(TABLE_KEY, JSON.stringify(o));
+  } catch {
+    /* ignore */
+  }
+}
 const ARCHE_POOL: Archetype[] = ["TAG", "LAG", "Nit", "Station"];
 
 function villainRangeFor(state: GameState, p: Player): HandLabel[] {
@@ -530,7 +553,7 @@ export const useGame = create<GameStore>((set, get) => {
   };
 
   return {
-    table: createTable(CONFIG),
+    table: createTable(BASE_CONFIG),
     thinking: false,
     paused: false,
     guess: null,
@@ -542,8 +565,10 @@ export const useGame = create<GameStore>((set, get) => {
     rangeView: null,
     lastActorSeat: null,
 
-    newSession: () => {
-      const base = createTable(CONFIG);
+    newSession: (opts) => {
+      const table = opts ?? loadTableOptions();
+      saveTableOptions(table);
+      const base = createTable({ ...BASE_CONFIG, seats: table.seats, ante: table.ante });
       const jitter = (v: number, frac: number, lo: number, hi: number) =>
         Math.min(hi, Math.max(lo, v * (1 - frac + Math.random() * 2 * frac)));
       const players = base.players.map((p) => {
@@ -595,8 +620,8 @@ export const useGame = create<GameStore>((set, get) => {
         button: nt.button,
         sb: nt.smallBlind,
         bb: nt.bigBlind,
-        sbSeat: (nt.button + 1) % nt.config.seats,
-        bbSeat: (nt.button + 2) % nt.config.seats,
+        sbSeat: nt.config.seats === 2 ? nt.button : (nt.button + 1) % nt.config.seats,
+        bbSeat: nt.config.seats === 2 ? (nt.button + 1) % nt.config.seats : (nt.button + 2) % nt.config.seats,
         seats: nt.players.map((p) => ({
           seat: p.id,
           name: p.name,

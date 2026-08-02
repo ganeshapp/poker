@@ -36,6 +36,7 @@ jobs:
           node --experimental-transform-types scripts/srs_test.ts
           node --experimental-transform-types scripts/icm_test.ts
           node --experimental-transform-types scripts/hhimport_test.ts
+          node --experimental-transform-types scripts/table_config_test.ts
 
       - name: Golden files (evaluator scores + bundled charts)
         run: node --experimental-transform-types scripts/golden_test.ts
