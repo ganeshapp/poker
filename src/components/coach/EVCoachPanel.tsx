@@ -45,7 +45,7 @@ export function EVCoachPanel() {
 
   return (
     <div className="pointer-events-auto absolute right-5 top-5 z-30 w-[340px] animate-slide-in-right">
-      <div className="overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-ink-800/95 shadow-[var(--sh-pop)] backdrop-blur">
+      <div className="flex max-h-[min(74vh,580px)] flex-col overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-ink-800/95 shadow-[var(--sh-pop)] backdrop-blur">
         <div className="flex items-center gap-2 px-4 py-3" style={{ background: `${meta.color}1f` }}>
           <span className="grid h-7 w-7 place-items-center rounded-full" style={{ background: meta.color, color: "#0b0f14" }}>
             <Icon name={meta.icon} size={16} strokeWidth={2.6} />
@@ -68,7 +68,7 @@ export function EVCoachPanel() {
           )}
         </div>
 
-        <div className="space-y-3 p-4">
+        <div className="min-h-0 space-y-3 overflow-y-auto p-4">
           {/* Layer 1: plain English, always first (TONE.md) */}
           <p className="text-[0.84rem] leading-relaxed text-[var(--text)]">{review.plain ?? review.text}</p>
 

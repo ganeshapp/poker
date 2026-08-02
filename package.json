@@ -1,7 +1,7 @@
 {
   "name": "all-in-poker-dojo",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "description": "All-In — a clean, offline-first Texas Hold'em training app (Tauri v2 + Rust + React + Zustand + Tailwind + Radix).",
   "scripts": {

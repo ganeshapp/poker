@@ -54,6 +54,9 @@ function revealNote(p: Player, board: Card[], summary: HandSummary): string {
 export function ResultOverlay() {
   const table = useGame((s) => s.table);
   const deal = useGame((s) => s.deal);
+  // All hooks must run before any early return (rules of hooks) —
+  // calling one below the return blanks the whole app at hand-over.
+  const realistic = useSettings((st) => st.realisticReveal);
   if (table.phase !== "hand-over" || !table.summary) return null;
 
   const s = table.summary;
@@ -65,7 +68,6 @@ export function ResultOverlay() {
   const winnerHand = s.showdown.find((e) => mainWinners.includes(e.playerId))?.hand;
 
   const color = netBb > 0.01 ? "var(--good)" : netBb < -0.01 ? "var(--bad)" : "var(--text-muted)";
-  const realistic = useSettings((st) => st.realisticReveal);
   const bots = table.players.filter((p) => !p.isHero && p.hole && !(realistic && p.hasFolded));
 
   return (
