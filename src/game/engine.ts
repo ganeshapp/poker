@@ -25,6 +25,8 @@ import { archetypeForSeat, botNameFor } from "./archetypes.ts";
    ================================================================== */
 
 const POS6: Position[] = ["BTN", "SB", "BB", "UTG", "MP", "CO"];
+// 9-max approximated onto the six canonical labels the charts know.
+const POS9: Position[] = ["BTN", "SB", "BB", "UTG", "UTG", "MP", "MP", "CO", "CO"];
 
 function clone(s: GameState): GameState {
   return {
@@ -109,7 +111,16 @@ function assignPositions(s: GameState) {
   const n = s.config.seats;
   for (let seat = 0; seat < n; seat++) {
     const off = (seat - s.button + n) % n;
-    s.players[seat].position = n === 6 ? POS6[off] : off === 0 ? "BTN" : off === 1 ? "SB" : off === 2 ? "BB" : "MP";
+    if (n === 2) {
+      // Heads-up: the button IS the small blind.
+      s.players[seat].position = off === 0 ? "BTN" : "BB";
+    } else if (n === 9) {
+      s.players[seat].position = POS9[off];
+    } else if (n === 6) {
+      s.players[seat].position = POS6[off];
+    } else {
+      s.players[seat].position = off === 0 ? "BTN" : off === 1 ? "SB" : off === 2 ? "BB" : "MP";
+    }
   }
 }
 
@@ -164,15 +175,35 @@ export function startHand(prev: GameState): GameState {
   for (const p of s.players) p.hole = [s.deck.pop()!, s.deck.pop()!];
   s.stacksAtStart = s.players.map((p) => p.stack);
 
-  const sbSeat = seatAtOffset(s, 1);
-  const bbSeat = seatAtOffset(s, 2);
+  // Antes (if configured) go straight to the pot: they count toward
+  // side-pot totals but never toward matching the current street bet.
+  const ante = s.config.ante ?? 0;
+  if (ante > 0) {
+    for (const p of s.players) {
+      const a = Math.min(ante, p.stack);
+      p.stack -= a;
+      p.committedTotal += a;
+      s.pot += a;
+      if (p.stack === 0) p.isAllIn = true;
+    }
+  }
+
+  // Heads-up: the button posts the SMALL blind and acts first preflop.
+  const headsUp = s.config.seats === 2;
+  const sbSeat = headsUp ? s.button : seatAtOffset(s, 1);
+  const bbSeat = headsUp ? seatAtOffset(s, 1) : seatAtOffset(s, 2);
   postBlind(s, sbSeat, s.smallBlind, "SB");
   postBlind(s, bbSeat, s.bigBlind, "BB");
   s.aggressor = bbSeat;
 
-  pushLog(s, "preflop", `Hand #${s.handNumber} · blinds ${s.smallBlind}/${s.bigBlind}`, "deal");
+  pushLog(
+    s,
+    "preflop",
+    `Hand #${s.handNumber} · blinds ${s.smallBlind}/${s.bigBlind}${ante > 0 ? ` · ante ${ante}` : ""}`,
+    "deal",
+  );
 
-  s.toAct = nextLiveActor(s, seatAtOffset(s, 3), true);
+  s.toAct = headsUp ? nextLiveActor(s, sbSeat, true) : nextLiveActor(s, seatAtOffset(s, 3), true);
   return s;
 }
 

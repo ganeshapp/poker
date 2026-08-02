@@ -152,10 +152,12 @@ export interface LogEntry {
 }
 
 export interface GameConfig {
-  seats: number; // 6
+  seats: number; // 2, 6, or 9
   startingStack: number; // in chips
   smallBlind: number;
   bigBlind: number;
+  /** Optional ante posted by every player each hand (chips). */
+  ante?: number;
 }
 
 export interface LegalActions {

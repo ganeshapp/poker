@@ -160,7 +160,7 @@ export function SessionSummaryModal() {
           <Button variant="secondary" onClick={onExport} disabled={hands === 0}>
             <Icon name="arrow-right" size={15} /> Export hands (.txt)
           </Button>
-          <Button onClick={newSession}>
+          <Button onClick={() => newSession()}>
             <Icon name="refresh" size={15} /> New session
           </Button>
         </div>

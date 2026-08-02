@@ -3,14 +3,14 @@ import { Seat } from "./Seat";
 import { Board } from "./Board";
 import { Pot } from "./Pot";
 
-const SEAT_POS = [
-  { left: "50%", top: "89%" }, // hero (id 0)
-  { left: "90%", top: "64%" },
-  { left: "90%", top: "20%" },
-  { left: "50%", top: "7%" },
-  { left: "10%", top: "20%" },
-  { left: "10%", top: "64%" },
-];
+/** Seats on the felt's rim for any table size, hero at bottom center. */
+function seatPos(n: number, i: number): { left: string; top: string } {
+  const rad = Math.PI / 2 - (2 * Math.PI * i) / n;
+  return {
+    left: `${(50 + 42 * Math.cos(rad)).toFixed(1)}%`,
+    top: `${(48 + 41 * Math.sin(rad)).toFixed(1)}%`,
+  };
+}
 
 export function PokerTable() {
   const table = useGame((s) => s.table);
@@ -49,7 +49,7 @@ export function PokerTable() {
           <div
             key={p.id}
             className="absolute -translate-x-1/2 -translate-y-1/2"
-            style={{ left: SEAT_POS[p.id].left, top: SEAT_POS[p.id].top }}
+            style={seatPos(table.players.length, p.id)}
           >
             <Seat
               player={p}

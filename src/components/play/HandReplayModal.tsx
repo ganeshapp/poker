@@ -10,14 +10,13 @@ import { Icon } from "@/components/ui/Icon";
 import { fmtBb } from "@/lib/format";
 import { cx } from "@/lib/cx";
 
-const SEAT_POS = [
-  { left: "50%", top: "86%" },
-  { left: "90%", top: "60%" },
-  { left: "90%", top: "16%" },
-  { left: "50%", top: "5%" },
-  { left: "10%", top: "16%" },
-  { left: "10%", top: "60%" },
-];
+function seatPos(n: number, i: number): { left: string; top: string } {
+  const rad = Math.PI / 2 - (2 * Math.PI * i) / n;
+  return {
+    left: `${(50 + 42 * Math.cos(rad)).toFixed(1)}%`,
+    top: `${(46 + 41 * Math.sin(rad)).toFixed(1)}%`,
+  };
+}
 
 export function HandReplayModal({ hand, onClose }: { hand: HHHand | null; onClose: () => void }) {
   const frames = useMemo(() => (hand ? buildReplayFrames(hand) : []), [hand]);
@@ -50,7 +49,7 @@ export function HandReplayModal({ hand, onClose }: { hand: HHHand | null; onClos
             <div
               key={s.seat}
               className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
-              style={{ left: SEAT_POS[i].left, top: SEAT_POS[i].top }}
+              style={seatPos(ordered.length, i)}
             >
               <div className={cx("flex gap-0.5", folded && "opacity-25 grayscale")}>
                 {showHole ? (
