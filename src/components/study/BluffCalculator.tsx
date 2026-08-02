@@ -23,14 +23,18 @@ export function BluffCalculator() {
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl bg-gold/10 p-4 text-center">
-          <div className="text-[0.7rem] uppercase tracking-wide text-gold/80">Villain must fold</div>
+          <div className="text-[0.7rem] uppercase tracking-wide text-gold/80">If you're bluffing</div>
           <div className="font-display text-3xl font-extrabold text-gold-light">{fmtPct(foldNeeded)}</div>
-          <div className="mt-1 text-[0.74rem] text-muted">for a pure bluff to break even</div>
+          <div className="mt-1 text-[0.74rem] text-muted">
+            they must fold at least this often for the bluff to make money
+          </div>
         </div>
         <div className="rounded-xl border border-[var(--line)] bg-ink-800 p-4 text-center">
-          <div className="text-[0.7rem] uppercase tracking-wide text-faint">You're laying a caller</div>
+          <div className="text-[0.7rem] uppercase tracking-wide text-faint">If they call you</div>
           <div className="font-display text-3xl font-extrabold text-[var(--text)]">{fmtPct(callerNeeds)}</div>
-          <div className="mt-1 text-[0.74rem] text-muted">the equity they need to call</div>
+          <div className="mt-1 text-[0.74rem] text-muted">
+            they only need to win this often for their call to make money
+          </div>
         </div>
       </div>
     </div>

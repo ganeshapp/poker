@@ -16,7 +16,7 @@ const MODES: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "target",
     title: "Drills",
-    body: "Chess-puzzle-style practice. Replay a spot to the decision point, then choose fold/call/raise for instant feedback and a self-adjusting rating. Three modes: Mixed cash spots (pre-flop charts + post-flop pot-odds/equity), short-stack Push/Fold, and My Leaks — your own coach-flagged mistakes, re-served until you fix them.",
+    body: "Chess-puzzle-style practice. Replay a spot to the decision point, then choose fold/call/raise for instant feedback and a self-adjusting rating. Four modes: Mixed cash spots (pre-flop charts + post-flop pot-odds/equity), short-stack Push/Fold, Exploits vs known player types, and Review — your own coach-flagged mistakes, re-served until you fix them.",
   },
   {
     icon: "book",

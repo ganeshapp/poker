@@ -5,7 +5,7 @@ const RANKINGS: { name: string; cards: Card[]; note: string }[] = [
   { name: "Royal Flush", cards: ["Ah", "Kh", "Qh", "Jh", "Th"], note: "A-K-Q-J-T, one suit" },
   { name: "Straight Flush", cards: ["9s", "8s", "7s", "6s", "5s"], note: "Five in a row, one suit" },
   { name: "Four of a Kind", cards: ["Qh", "Qd", "Qc", "Qs", "3d"], note: "All four of a rank" },
-  { name: "Full House", cards: ["Jh", "Jd", "Jc", "8s", "8h"], note: "Trips + a pair" },
+  { name: "Full House", cards: ["Jh", "Jd", "Jc", "8s", "8h"], note: "Three of a kind + a pair" },
   { name: "Flush", cards: ["Ad", "Jd", "8d", "5d", "2d"], note: "Five of one suit" },
   { name: "Straight", cards: ["9h", "8s", "7d", "6c", "5h"], note: "Five in a row, mixed suits" },
   { name: "Three of a Kind", cards: ["7h", "7d", "7c", "Ks", "2d"], note: "Three of a rank" },

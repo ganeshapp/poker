@@ -169,18 +169,18 @@ function interpretBot(p: Player): string {
   const label = p.lastAction?.label ?? "acts";
   if (label === "Fold") return `${p.name} folds — their range no longer matters this hand.`;
   if (label === "Check")
-    return `A check from ${p.name} usually shows weakness or pot control. Consider betting to take it down.`;
+    return `A check from ${p.name} usually means a weak hand — or keeping the pot small. Consider betting to take the pot now.`;
   if (label === "Call" || label === "All-In") {
-    if (a === "Station") return `${p.name} (Station) calls with almost anything — their range stays very wide and weak. Value bet relentlessly, never bluff.`;
-    if (a === "Nit") return `Even a Nit's call is a fairly strong, capped range. Slow down with marginal hands.`;
-    if (a === "LAG") return `${p.name} (LAG) calls wide and floats a lot — keep barreling good hands, expect bluff-catches.`;
-    return `A call keeps ${p.name}'s range wide and uncapped — proceed with caution.`;
+    if (a === "Station") return `${p.name} (Station) calls with almost anything — their possible hands stay very wide and weak. Bet your good hands relentlessly; never bluff.`;
+    if (a === "Nit") return `Even a Nit's call means a fairly strong hand — though they'd raise their very best. Slow down with so-so hands.`;
+    if (a === "LAG") return `${p.name} (LAG) calls with lots of hands, often planning to steal the pot later — keep betting your good hands; expect them to call you down with medium ones.`;
+    return `A call keeps ${p.name}'s possible hands wide — their strongest hands included — proceed with caution.`;
   }
   // Bet / Raise
   if (a === "Nit") return `A raise from a Nit is a red flag — expect a premium. Fold your marginal hands.`;
-  if (a === "Station") return `${p.name} (Station) almost never raises — when they do, it's usually close to the nuts.`;
-  if (a === "LAG") return `${p.name} (LAG) raises very wide; this is often a bluff or thin value. Don't over-fold.`;
-  return `${p.name} (TAG) raises a credible, value-weighted range. Respect it unless you have a strong hand.`;
+  if (a === "Station") return `${p.name} (Station) almost never raises — when they do, it's usually close to the best possible hand.`;
+  if (a === "LAG") return `${p.name} (LAG) raises very wide; this is often a bluff or a bet with only a slim edge. Don't fold too often.`;
+  return `${p.name} (TAG) raises mostly genuinely strong hands, few bluffs. Take it seriously unless you have a strong hand too.`;
 }
 
 async function evaluateHero(state: GameState, action: Action, id: number): Promise<CoachReview | null> {
@@ -415,7 +415,7 @@ async function evaluateHero(state: GameState, action: Action, id: number): Promi
     text = `Aggressive: only ${pct}% equity if called. Works as a bluff but relies on folds.`;
   } else {
     plain = `A solid bet: when called, your hand wins ${fmtTimes(equity)}, and every fold you pick up is pure profit on top.`;
-    text = `${pct}% equity vs ${oppDesc} — a reasonable bet mixing value and fold equity.`;
+    text = `${pct}% equity vs ${oppDesc} — a reasonable bet — worse hands may call, and every fold wins you the pot.`;
   }
   return {
     ...base,

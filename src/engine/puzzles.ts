@@ -174,10 +174,10 @@ function genRfi(): Puzzle {
     best,
     accept,
     rationale: mixed
-      ? `${heroPos} opens about ${pctOf(chart)}% of hands here, and ${label} is a true mixed hand — the chart opens it ${Math.round(freq * 100)}% of the time, so raising and folding are both fine (limping still isn't).`
+      ? `${heroPos} opens about ${pctOf(chart)}% of hands here, and ${label} is a true mixed hand — the chart opens it ${Math.round(freq * 100)}% of the time, so raising and folding are both fine (just calling the minimum — limping — still isn't).`
       : freq >= 0.5
-        ? `${heroPos} opens about ${pctOf(chart)}% of hands. ${label} is in that range, so the chart play is to raise (limping isn't part of a solid opening strategy).`
-        : `${heroPos} opens about ${pctOf(chart)}% of hands. ${label} isn't in that range, so fold — limping/calling here is −EV.`,
+        ? `${heroPos} opens about ${pctOf(chart)}% of hands. ${label} is in that range, so the chart play is to raise (just calling the minimum — "limping" — isn't part of a solid opening strategy).`
+        : `${heroPos} opens about ${pctOf(chart)}% of hands. ${label} isn't in that range, so fold — just calling the minimum (limping) here loses money over time.`,
     difficulty: mixed ? 3 : 1,
     gradeRange: chartLabels05(chart),
     gradeRangeTitle: `${heroPos} opening range (~${pctOf(chart)}%)`,
@@ -364,7 +364,7 @@ function genPostflopBet(): Puzzle {
     accept,
     rationale: closeCall
       ? `Razor-thin: ~${Math.round(eq * 100)}% equity against a plausible ${street} continuing range vs ${Math.round(breakEven * 100)}% pot odds. That's inside the margin where folding and calling are both fine — ${best === "call" ? "calling" : "folding"} is marginally better.`
-      : `You have ~${Math.round(eq * 100)}% equity against a plausible ${street} continuing range, and you're being laid ${Math.round(breakEven * 100)}% pot odds. ${
+      : `You have ~${Math.round(eq * 100)}% equity against a plausible ${street} continuing range, and your call needs to win ${Math.round(breakEven * 100)}% to break even (your pot odds). ${
           best === "call"
             ? eq > 0.72
               ? "That's a clear call — and strong enough to raise for value."
@@ -534,7 +534,7 @@ function genThreeBetPot(): Puzzle {
 
   const frames: DrillFrame[] = [
     { text: `You open ${heroPos} to 2.5 bb; ${villainPos} 3-bets to 9 bb; you call. Heads-up.`, street: "preflop", board: [], pot },
-    { text: `${capital(street)}: ${board.join(" ")} (pot 20 bb — SPR is low: about 4.5).`, street, board: [...board], pot },
+    { text: `${capital(street)}: ${board.join(" ")} (pot 20 bb — stacks are only ~4.5 pots deep: a low SPR).`, street, board: [...board], pot },
     { text: `${villainPos} c-bets ${bet} bb. Action on you.`, street, board: [...board], pot: totalPot },
   ];
 
@@ -561,7 +561,7 @@ function genThreeBetPot(): Puzzle {
     accept,
     rationale: closeCall
       ? `Razor-thin in a 3-bet pot: ~${Math.round(eq * 100)}% equity vs a 3-betting range, ${Math.round(breakEven * 100)}% needed — both answers are fine. Remember the low SPR: whatever continues here is often committed.`
-      : `In a 3-bet pot the villain's range is strong (big pairs, big cards) — your ${label} has ~${Math.round(eq * 100)}% equity against it, and you need ${Math.round(breakEven * 100)}%. ${best === "call" ? "That's enough — and at SPR ~4, plan for the rest going in on many runouts." : "Not enough against this range at this price — fold and keep the 9 bb loss small."}`,
+      : `In a 3-bet pot your opponent's range is strong (big pairs, big cards) — your ${label} has ~${Math.round(eq * 100)}% equity against it, and you need ${Math.round(breakEven * 100)}%. ${best === "call" ? "That's enough — and with stacks this shallow (SPR ~4), plan for the rest going in on many turn and river cards." : "Not enough against this range at this price — fold and keep the 9 bb loss small."}`,
     equity: eq,
     potOdds: breakEven,
     difficulty: Math.abs(eq - breakEven) < 0.06 ? 3 : 2,
@@ -840,7 +840,7 @@ export function generateExploit(): Puzzle {
       bb: BBV,
       seats: fullSeats("CO", ORDER.filter((p) => p !== "CO" && p !== "BB"), ["BB"]),
       frames: [
-        { text: `The BB is a NIT (raises only with near-nut hands). You bet the turn with a decent hand.`, street: "preflop", board: [], pot },
+        { text: `The BB is a NIT (raises only with hands close to the best possible). You bet the turn with a decent hand.`, street: "preflop", board: [], pot },
         { text: `Turn: ${board.join(" ")}. The Nit RAISES to ${toCall + 6} bb.`, street: "turn", board: [...board], pot: r1(pot + toCall) },
         { text: `Action on you — it costs ${toCall} bb more.`, street: "turn", board: [...board], pot: r1(pot + toCall) },
       ],
@@ -850,7 +850,7 @@ export function generateExploit(): Puzzle {
       ],
       best: "fold",
       accept: ["fold"],
-      rationale: `THE EXPLOIT: vs a balanced raiser your ${label} has ~${Math.round(eqBalanced * 100)}% equity — enough for the ${Math.round(breakEven * 100)}% price, so balanced play calls. But a Nit's raise means near-nuts: against THAT range you have ~${Math.round(eqNit * 100)}%. Folding "too much" here isn't a leak — it's the profit. When a Nit wakes up, believe them.`,
+      rationale: `THE EXPLOIT: vs a balanced raiser your ${label} has ~${Math.round(eqBalanced * 100)}% equity — enough for the ${Math.round(breakEven * 100)}% price, so balanced play calls. But a Nit's raise means close to the best possible hand: against THAT range you have ~${Math.round(eqNit * 100)}%. Folding "too much" here isn't a leak — it's the profit. When a Nit wakes up, believe them.`,
       equity: eqNit,
       potOdds: breakEven,
       difficulty: 2,
@@ -934,7 +934,7 @@ function gradeFromFreq(
   } else if (freq <= 0.02) {
     rationale = `${context} ${label} is outside the equilibrium ${aggroWord} range at ${stack} bb — fold.`;
   } else {
-    rationale = `${context} A true mixed spot: the equilibrium ${aggroWord}s ${label} about ${Math.round(freq * 100)}% of the time here, so ${aggroWord}ing and folding are both fine.`;
+    rationale = `${context} A true mixed spot: the equilibrium ${aggroWord}s ${label} about ${Math.round(freq * 100)}% of the time here, so either answer is fine.`;
   }
   return { best, accept, rationale };
 }
@@ -957,7 +957,7 @@ function generateIcmPushFold(): Puzzle {
       label,
       sbStack,
       "raise",
-      "jam",
+      "shove",
       `${sc.name}: folded to you in the SB with ${sbStack} bb (ICM, $EV). ${icmNote}`,
     );
     return {
@@ -987,7 +987,7 @@ function generateIcmPushFold(): Puzzle {
       rationale,
       difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
       gradeRange: chartLabels05(sc.jam),
-      gradeRangeTitle: `ICM SB jamming range — ${sc.name}`,
+      gradeRangeTitle: `ICM SB shoving range — ${sc.name}`,
       lessonId: "spr",
       lessonTitle: "SPR & Commitment",
       icm: true,
@@ -1054,7 +1054,7 @@ export function generatePushFold(): Puzzle {
       best,
       accept,
       rationale,
-    } = gradeFromFreq(freq, label, stack, "raise", "jam", `Folded to you in the ${heroPos} with ${stack} bb (Nash, chip-EV, no antes).`);
+    } = gradeFromFreq(freq, label, stack, "raise", "shove", `Folded to you in the ${heroPos} with ${stack} bb (Nash, chip-EV, no antes).`);
     const heroIdx = ORDER.indexOf(heroPos);
     const foldedBefore = ORDER.slice(0, heroIdx).filter((p) => p !== "SB" && p !== "BB");
     const pot = SB + BBV;
@@ -1087,7 +1087,7 @@ export function generatePushFold(): Puzzle {
       rationale,
       difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
       gradeRange: nashLabels(NASH_SHOVE[stack]?.[heroPos as PushFoldPos] ?? {}),
-      gradeRangeTitle: `Nash ${stack}bb ${heroPos} jamming range`,
+      gradeRangeTitle: `Nash ${stack}bb ${heroPos} shoving range`,
       lessonId: "spr",
       lessonTitle: "SPR & Commitment",
     };
@@ -1133,7 +1133,7 @@ export function generatePushFold(): Puzzle {
     rationale,
     difficulty: freq > 0.2 && freq < 0.8 ? 3 : 2,
     gradeRange: nashLabels(NASH_CALL[stack]?.[`${shoverPos}>BB`] ?? {}),
-    gradeRangeTitle: `Nash BB calling range vs ${stack}bb ${shoverPos} jam`,
+    gradeRangeTitle: `Nash BB calling range vs ${stack}bb ${shoverPos} shove`,
     lessonId: "spr",
     lessonTitle: "SPR & Commitment",
   };

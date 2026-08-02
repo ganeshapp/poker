@@ -190,7 +190,7 @@ export function EVCoachPanel() {
                 variant="secondary"
                 size="sm"
                 className="flex-1"
-                onClick={() => openRangeView(review.villainName ?? "Villain", review.villainRange ?? [])}
+                onClick={() => openRangeView(review.villainName ?? "Your opponent", review.villainRange ?? [])}
               >
                 <Icon name="eye" size={14} /> View range
               </Button>

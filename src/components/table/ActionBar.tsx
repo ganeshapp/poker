@@ -116,7 +116,7 @@ export function ActionBar() {
           </div>
           {session.active && heroToAct && la.toCall > 0 ? (
             <div className="text-[0.72rem] text-muted">
-              To call <span className="mono text-gold-light">{fmtBb(la.callAmount, bb)} bb</span> · odds{" "}
+              To call <span className="mono text-gold-light">{fmtBb(la.callAmount, bb)} bb</span> · need to win{" "}
               {fmtPct(la.toCall / (table.pot + la.toCall))}
             </div>
           ) : (

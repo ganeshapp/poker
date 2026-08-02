@@ -21,7 +21,7 @@ export function PotOddsCalculator() {
         <Field label="Pot before the bet" value={`${pot} bb`}>
           <Slider value={pot} min={1} max={60} step={1} onValueChange={setPot} ariaLabel="Pot" />
         </Field>
-        <Field label="Villain's bet" value={`${bet} bb`}>
+        <Field label="Opponent's bet" value={`${bet} bb`}>
           <Slider value={bet} min={0.5} max={60} step={0.5} onValueChange={setBet} ariaLabel="Bet" />
         </Field>
       </div>
