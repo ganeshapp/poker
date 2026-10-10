@@ -92,6 +92,28 @@ export function PlayView() {
                     </div>
                   </div>
                 </div>
+                <div className="mt-3 flex items-center justify-center gap-2 text-[0.76rem] text-muted">
+                  <span>When a bot busts</span>
+                  <div className="flex rounded-lg bg-ink-700 p-0.5">
+                    {([true, false] as const).map((r) => (
+                      <button
+                        key={String(r)}
+                        onClick={() => setTableOpts((o) => ({ ...o, botRebuy: r }))}
+                        className={cx(
+                          "rounded-md px-2.5 py-1 text-[0.74rem] font-semibold transition",
+                          tableOpts.botRebuy === r ? "bg-gold text-ink-900" : "text-muted hover:text-[var(--text)]",
+                        )}
+                      >
+                        {r ? "They buy back in" : "They leave"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="mx-auto mt-2 max-w-[360px] text-[0.7rem] leading-relaxed text-faint">
+                  {tableOpts.botRebuy
+                    ? "Busted bots get a fresh 100 bb, so every hand is a full table."
+                    : "Busted bots leave for good, so the table plays down — fewer players means you can open far more hands."}
+                </p>
                 {tableOpts.seats !== 6 && (
                   <p className="mx-auto mt-2 max-w-[340px] text-[0.7rem] leading-relaxed text-faint">
                     Coach charts assume 6-max — verdicts at other table sizes use the nearest position

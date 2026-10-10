@@ -61,6 +61,9 @@ export function Seat({ player, bb, isCurrent, isButton, isWinner, canGuess, onGu
           isCurrent ? "ring-2 ring-gold animate-pulse-ring" : "ring-1 ring-[var(--line)]",
           isWinner && "ring-2 ring-good",
           player.hasFolded && "opacity-55",
+          // A seat that has busted out of a play-down table is empty, not
+          // folded: it keeps its place so the table does not jump around.
+          player.sittingOut && "opacity-40",
         )}
       >
         {canGuess && (
@@ -83,12 +86,22 @@ export function Seat({ player, bb, isCurrent, isButton, isWinner, canGuess, onGu
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <span className="truncate text-[0.8rem] font-semibold text-[var(--text)]">{player.name}</span>
-              <span className="rounded bg-white/8 px-1 text-[0.58rem] font-semibold uppercase tracking-wide text-muted">
-                {player.position}
-              </span>
+              {/* A seat that is out holds no position any more — a live
+                  player has taken it, and showing both reads as a duplicate. */}
+              {!player.sittingOut && (
+                <span className="rounded bg-white/8 px-1 text-[0.58rem] font-semibold uppercase tracking-wide text-muted">
+                  {player.position}
+                </span>
+              )}
             </div>
             <div className="mono text-[0.72rem] text-gold-light/90">
-              {fmtBb(player.stack, bb)} <span className="text-faint">bb</span>
+              {player.sittingOut ? (
+                <span className="text-faint">busted out</span>
+              ) : (
+                <>
+                  {fmtBb(player.stack, bb)} <span className="text-faint">bb</span>
+                </>
+              )}
             </div>
           </div>
           {isButton && (

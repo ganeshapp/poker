@@ -10,3 +10,9 @@ src-tauri/target
 # Rust build artifacts (poker-core standalone runs)
 poker-core/target/
 poker-core/Cargo.lock
+
+# Scratch harnesses and patched copies kept alongside the source while
+# comparing engine revisions. They are not part of the app, and a copy of a
+# store under src/ is a second source of truth tsc will also refuse to build.
+scripts/_*
+src/**/_*.ts

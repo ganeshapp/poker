@@ -115,14 +115,20 @@ const TABLE_KEY = "allin.table.v1";
 export interface TableOptions {
   seats: 2 | 6 | 9;
   ante: number; // chips
+  /** false = busted bots leave and the table plays down short-handed. */
+  botRebuy: boolean;
 }
 
 export function loadTableOptions(): TableOptions {
   try {
     const v = JSON.parse(localStorage.getItem(TABLE_KEY) || "{}");
-    return { seats: v.seats === 2 || v.seats === 9 ? v.seats : 6, ante: v.ante === 5 ? 5 : 0 };
+    return {
+      seats: v.seats === 2 || v.seats === 9 ? v.seats : 6,
+      ante: v.ante === 5 ? 5 : 0,
+      botRebuy: v.botRebuy !== false,
+    };
   } catch {
-    return { seats: 6, ante: 0 };
+    return { seats: 6, ante: 0, botRebuy: true };
   }
 }
 
@@ -461,6 +467,7 @@ export const useGame = create<GameStore>((set, get) => {
     if (currentHH) {
       currentHH.board = [...nt.board];
       currentHH.potResults = nt.summary?.potResults ?? [];
+      currentHH.uncalled = nt.summary?.uncalled;
       currentHH.heroNet = nt.summary?.heroNetChips ?? 0;
       for (const p of nt.players) currentHH.holes[p.id] = p.hole ?? undefined;
       const hh = currentHH;
@@ -568,7 +575,12 @@ export const useGame = create<GameStore>((set, get) => {
     newSession: (opts) => {
       const table = opts ?? loadTableOptions();
       saveTableOptions(table);
-      const base = createTable({ ...BASE_CONFIG, seats: table.seats, ante: table.ante });
+      const base = createTable({
+        ...BASE_CONFIG,
+        seats: table.seats,
+        ante: table.ante,
+        botRebuy: table.botRebuy,
+      });
       const jitter = (v: number, frac: number, lo: number, hi: number) =>
         Math.min(hi, Math.max(lo, v * (1 - frac + Math.random() * 2 * frac)));
       const players = base.players.map((p) => {
@@ -610,19 +622,26 @@ export const useGame = create<GameStore>((set, get) => {
         set({ sessionEnded: true });
         return;
       }
-      const players = t0.players.map((p) =>
-        !p.isHero && p.stack <= 0 ? { ...p, stack: t0.config.startingStack } : p,
-      );
-      const nt = startHand({ ...t0, players });
+      // Playing down: once the last bot is gone there is nobody to deal to,
+      // so the session ends on the hero having taken the whole table.
+      if (t0.config.botRebuy === false && t0.players.filter((p) => !p.sittingOut && p.stack > 0).length < 2) {
+        set({ sessionEnded: true });
+        return;
+      }
+      // `startHand` owns what happens to an empty stack — topping it up or
+      // sitting it out, depending on the table.
+      const nt = startHand(t0);
       currentHH = {
         id: nt.handNumber,
         startedAt: Date.now(),
         button: nt.button,
         sb: nt.smallBlind,
         bb: nt.bigBlind,
-        sbSeat: nt.config.seats === 2 ? nt.button : (nt.button + 1) % nt.config.seats,
-        bbSeat: nt.config.seats === 2 ? (nt.button + 1) % nt.config.seats : (nt.button + 2) % nt.config.seats,
-        seats: nt.players.map((p) => ({
+        // Who actually posted, so a short-handed table exports correctly.
+        sbSeat: nt.players.find((p) => p.lastAction?.label === "SB")?.id ?? nt.button,
+        bbSeat: nt.players.find((p) => p.lastAction?.label === "BB")?.id ?? nt.button,
+        tableSize: nt.config.seats,
+        seats: nt.players.filter((p) => !p.sittingOut).map((p) => ({
           seat: p.id,
           name: p.name,
           stack: nt.stacksAtStart[p.id],

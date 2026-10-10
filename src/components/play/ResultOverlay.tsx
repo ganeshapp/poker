@@ -1,7 +1,7 @@
 import { useGame } from "@/store/gameStore";
 import { useSettings } from "@/store/settingsStore";
 import type { Card, HandSummary, Player, Street } from "@/types/poker";
-import { fmtSigned } from "@/lib/format";
+import { fmtBb, fmtSigned } from "@/lib/format";
 import { Button } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
 import { PlayingCard } from "@/components/table/PlayingCard";
@@ -62,13 +62,35 @@ export function ResultOverlay() {
   const s = table.summary;
   const bb = table.bigBlind;
   const netBb = s.heroNetChips / bb;
-  const won = s.potResults.some((pr) => pr.winners.includes(0));
-  const mainWinners = s.potResults[0]?.winners ?? [];
-  const winnerNames = mainWinners.map((id) => table.players[id].name).join(", ");
-  const winnerHand = s.showdown.find((e) => mainWinners.includes(e.playerId))?.hand;
+  // "You won the pot" above a line saying someone else won the bigger one is
+  // a contradiction: only claim it when every pot was the hero's.
+  const won =
+    s.potResults.length > 0 && s.potResults.every((pr) => pr.winners.includes(0));
+
+  // One line per pot. Naming only the first pot's winner left a side pot
+  // unexplained — "You won the pot" above "Polk wins with a pair of kings".
+  const sidePots = s.potResults.length - 1;
+  const potLines = s.potResults.map((pr, i) => {
+    const names = pr.winners.map((id) => table.players[id].name).join(", ");
+    const hand = s.showdown.find((e) => pr.winners.includes(e.playerId))?.hand;
+    // With two or more side pots "the side pot" names two different pots, so
+    // number them; with one there is nothing to disambiguate.
+    const which =
+      s.potResults.length < 2 ? "" : i === 0 ? " the main pot" : sidePots > 1 ? ` side pot ${i}` : " the side pot";
+    // "You" takes a plural verb; a bot's name takes the singular.
+    const plural = pr.winners.includes(0) || pr.winners.length > 1;
+    return {
+      names,
+      tail: hand
+        ? `${plural ? "win" : "wins"}${which} with ${hand.name.toLowerCase()}.`
+        : `${plural ? "take" : "takes"}${which} it down.`,
+    };
+  });
 
   const color = netBb > 0.01 ? "var(--good)" : netBb < -0.01 ? "var(--bad)" : "var(--text-muted)";
-  const bots = table.players.filter((p) => !p.isHero && p.hole && !(realistic && p.hasFolded));
+  const bots = table.players.filter(
+    (p) => !p.isHero && !p.sittingOut && p.hole && !(realistic && p.hasFolded),
+  );
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-[44%] flex -translate-y-1/2 justify-center">
@@ -82,14 +104,40 @@ export function ResultOverlay() {
               {won ? "You won the pot" : "Hand over"}
             </div>
           </div>
-          <div className="flex-1 text-[0.78rem] text-muted">
-            <span className="font-semibold text-[var(--text)]">{winnerNames}</span>
-            {winnerHand ? ` wins with ${winnerHand.name.toLowerCase()}.` : " takes it down."}
+          <div className="flex-1 text-[0.78rem] leading-snug text-muted">
+            {potLines.map((line, i) => (
+              <div key={i}>
+                <span className="font-semibold text-[var(--text)]">{line.names}</span> {line.tail}
+              </div>
+            ))}
+            {s.uncalled && (
+              <div>
+                <span className="font-semibold text-[var(--text)]">
+                  {table.players[s.uncalled.playerId].name}
+                </span>{" "}
+                {s.uncalled.playerId === 0 ? "get" : "gets"} {fmtBb(s.uncalled.amount, bb)} bb back —
+                nobody called it.
+              </div>
+            )}
           </div>
           <Button onClick={deal}>
             Next <Icon name="arrow-right" size={15} />
           </Button>
         </div>
+
+        {/* The card sits over the middle of the felt, so it carries the board
+            with it: the reveals below are unreadable without the five cards
+            they are talking about. */}
+        {s.board.length > 0 && (
+          <div className="mt-2.5 flex items-center gap-2 border-t border-[var(--line)] pt-2.5">
+            <span className="text-[0.62rem] uppercase tracking-wide text-faint">Board</span>
+            <div className="flex gap-1">
+              {s.board.map((c) => (
+                <PlayingCard key={c} card={c} w={30} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Learning reveal: every hand dealt, folds included */}
         <div className="mt-3 grid gap-1.5 border-t border-[var(--line)] pt-3 sm:grid-cols-2">

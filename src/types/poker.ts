@@ -129,6 +129,20 @@ export interface PotResult {
   potLabel: string; // "Main pot" / "Side pot 1"
 }
 
+/** Chips one player bet that nobody matched: pushed back, never won. */
+export interface UncalledBet {
+  playerId: number;
+  amount: number;
+  /**
+   * True when `potResults` still carries these chips (a hand that folded out
+   * reports the whole pot), false when the engine already took them out (a
+   * showdown returns them before it awards anything). The exporter must not
+   * have to guess which, because the "did this seat fold?" heuristic it would
+   * guess from misreads an all-in blind as a fold.
+   */
+  inPot: boolean;
+}
+
 export interface ShowdownEntry {
   playerId: number;
   hole: [Card, Card];
@@ -142,6 +156,8 @@ export interface HandSummary {
   showdown: ShowdownEntry[];
   board: Card[];
   heroNetChips: number;
+  /** Set when the last bet went uncalled and came back to its owner. */
+  uncalled?: UncalledBet;
 }
 
 export interface LogEntry {
@@ -158,6 +174,14 @@ export interface GameConfig {
   bigBlind: number;
   /** Optional ante posted by every player each hand (chips). */
   ante?: number;
+
+  /**
+   * What happens to a bot that runs out of chips. `true` (the default) tops
+   * it back up so the table always has the same number of players; `false`
+   * plays the table down, so busted bots leave and the game becomes
+   * short-handed — which is the dynamic you are practising for.
+   */
+  botRebuy?: boolean;
 }
 
 export interface LegalActions {

@@ -5,6 +5,7 @@
 import { evaluateCards, evaluateInts } from "../src/engine/evaluator.ts";
 import { HandCategory } from "../src/types/poker.ts";
 import { cardToInt } from "../src/engine/cards.ts";
+import { buildSidePots, createTable, startHand, seatedIds } from "../src/game/engine.ts";
 import { equityVsRange, equityVsRandom, comboToInts } from "../src/engine/equity.ts";
 import {
   allLabels,
@@ -142,6 +143,97 @@ ok(tExact.equity > 0.9, "AK top two vs QQ on the turn is dominant");
 // MC results report their uncertainty.
 const mc = equityVsRange(AKs, [], QQ, 2000, 5);
 ok(mc.exact === false && mc.se > 0 && mc.se < 0.02, "MC result carries a plausible standard error");
+
+// ---- Side pots: one pot per eligible set, uncalled bets handed back ----
+{
+  const P = (id: number, amt: number, folded = false) => ({ id, amt, folded });
+
+  // Four betting levels but only one set of contenders: one pot, not four.
+  const flat = buildSidePots([P(0, 605), P(1, 5, true), P(2, 205, true), P(3, 100), P(5, 605)]);
+  ok(flat.pots.length === 2, "levels with the same contenders merge into one pot");
+  ok(flat.pots[0].amount === 405 && flat.pots[1].amount === 1115, "merged pots keep every chip");
+  ok(flat.uncalled === undefined, "a fully called pot returns nothing");
+
+  // A genuinely short all-in still gets its own side pot.
+  const real = buildSidePots([P(1, 300), P(2, 800), P(3, 1500), P(5, 1500)]);
+  ok(real.pots.length === 3, "three stack sizes make three pots");
+  ok(
+    real.pots.map((p) => p.amount).join(",") === "1200,1500,1400",
+    "short all-ins cap each pot at what everyone could match",
+  );
+
+  // Heads-up, one player bet more than the other could call.
+  const over = buildSidePots([P(0, 500), P(1, 2000)]);
+  ok(over.pots.length === 1 && over.pots[0].amount === 1000, "only the matched chips form a pot");
+  ok(
+    over.uncalled?.playerId === 1 && over.uncalled.amount === 1500,
+    "the unmatched remainder goes back to whoever bet it",
+  );
+
+  // Dead money from a folded player never leaves the table.
+  const dead = buildSidePots([P(0, 100, true), P(1, 50), P(2, 50)]);
+  ok(dead.pots.length === 1 && dead.pots[0].amount === 200, "a folded overbet stays in the pot");
+  ok(dead.uncalled === undefined, "a folded player is never handed chips back");
+}
+
+// ---- Playing the table down instead of rebuying busted bots ----
+{
+  const cfg = { seats: 6, startingStack: 2000, smallBlind: 10, bigBlind: 20 };
+
+  // Default: a bot at 0 is topped back up and the table keeps its shape.
+  const keep = createTable({ ...cfg });
+  keep.players[3].stack = 0;
+  const kept = startHand(keep);
+  // `+ committed` because the top-up happens before the blinds are posted.
+  ok(
+    kept.players[3].stack + kept.players[3].committed === 2000,
+    "rebuy on: a busted bot is topped back up",
+  );
+  ok(seatedIds(kept).length === 6, "rebuy on: nobody leaves the table");
+
+  // Play-down: the same bot leaves, and the table deals five-handed.
+  const down = createTable({ ...cfg, botRebuy: false });
+  down.players[3].stack = 0;
+  const short = startHand(down);
+  ok(short.players[3].sittingOut === true, "rebuy off: a busted bot sits out");
+  ok(short.players[3].hole === null, "a seat that is out is not dealt in");
+  ok(seatedIds(short).length === 5, "the table is five-handed now");
+  ok(
+    short.players.filter((p) => !p.sittingOut && p.hole).length === 5,
+    "every remaining seat gets cards",
+  );
+  ok(!short.players[short.button].sittingOut, "the button never stops on an empty seat");
+  const live = seatedIds(short).map((id) => short.players[id].position);
+  ok(new Set(live).size === 5, "five-handed uses five distinct positions");
+  ok(live.includes("BTN") && live.includes("SB") && live.includes("BB"), "the blinds still exist");
+  ok(short.players[3].handsSeen === keep.players[3].handsSeen, "a seat that is out sees no hands");
+
+  // The hero is never sat out by the engine, however the table is set.
+  const heroBust = createTable({ ...cfg, botRebuy: false });
+  heroBust.players[0].stack = 0;
+  const dealt = startHand(heroBust);
+  ok(dealt.players[0].sittingOut === false, "the hero is never sat out here");
+  ok(
+    dealt.players[0].stack + dealt.players[0].committed === 2000,
+    "the hero's seat is the session's business",
+  );
+
+  // Down to two: the heads-up blind rule takes over.
+  const hu = createTable({ ...cfg, botRebuy: false });
+  for (const id of [1, 2, 3, 4]) hu.players[id].stack = 0;
+  const two = startHand(hu);
+  ok(seatedIds(two).length === 2, "four bots out leaves two players");
+  const btn = two.players[seatedIds(two)[0]];
+  ok(
+    two.players.filter((p) => !p.sittingOut && p.position === "BTN").length === 1,
+    "heads-up still has a button",
+  );
+  ok(
+    two.players.filter((p) => !p.sittingOut && p.committed === two.smallBlind).length === 1,
+    "heads-up posts exactly one small blind",
+  );
+  ok(btn !== undefined, "a seated player holds the button");
+}
 
 console.log(`\nEngine tests: ${passed} passed, ${failed} failed.`);
 process.exit(failed === 0 ? 0 : 1);

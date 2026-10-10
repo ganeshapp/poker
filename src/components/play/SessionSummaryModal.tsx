@@ -16,6 +16,13 @@ export function SessionSummaryModal() {
   const session = useGame((s) => s.session);
   const bb = useGame((s) => s.table.bigBlind);
   const heroBusted = useGame((s) => s.table.players[0].stack <= 0);
+  // Playing down, the other way a session can stop: nobody is left to deal to.
+  const tableCleared = useGame(
+    (s) =>
+      s.table.config.botRebuy === false &&
+      s.table.players[0].stack > 0 &&
+      s.table.players.filter((p) => !p.sittingOut && p.stack > 0).length < 2,
+  );
   const newSession = useGame((s) => s.newSession);
   const closeSummary = useGame((s) => s.closeSummary);
   const [msg, setMsg] = useState<string | null>(null);
@@ -61,9 +68,21 @@ export function SessionSummaryModal() {
       open={sessionEnded}
       onOpenChange={(o) => !o && closeSummary()}
       maxWidth={520}
-      hideClose={heroBusted}
-      title={heroBusted ? "Session over — you busted" : "Session summary"}
-      description={`${hands} hand${hands === 1 ? "" : "s"} played this session.`}
+      // Both terminal endings hide the ✕: closing into a table that cannot
+      // deal another hand just bounces the user straight back here.
+      hideClose={heroBusted || tableCleared}
+      title={
+        heroBusted
+          ? "Session over — you busted"
+          : tableCleared
+            ? "Session over — you took the whole table"
+            : "Session summary"
+      }
+      description={
+        tableCleared
+          ? `${hands} hand${hands === 1 ? "" : "s"} played. Every bot is out of chips, so there is nobody left to deal to.`
+          : `${hands} hand${hands === 1 ? "" : "s"} played this session.`
+      }
     >
       <div className="space-y-4">
         {/* Decisions first — that's the thing you control. Money after. */}

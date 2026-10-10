@@ -11,6 +11,7 @@ import type {
   PotResult,
   ShowdownEntry,
   Street,
+  UncalledBet,
 } from "../types/poker.ts";
 import { makeDeck, shuffle } from "../engine/cards.ts";
 import { evaluateCards } from "../engine/evaluator.ts";
@@ -27,6 +28,37 @@ import { archetypeForSeat, botNameFor } from "./archetypes.ts";
 const POS6: Position[] = ["BTN", "SB", "BB", "UTG", "MP", "CO"];
 // 9-max approximated onto the six canonical labels the charts know.
 const POS9: Position[] = ["BTN", "SB", "BB", "UTG", "UTG", "MP", "MP", "CO", "CO"];
+
+/**
+ * Seat labels by how many players are actually in the hand, indexed from the
+ * button. A table playing down (`botRebuy: false`) passes through every size
+ * on its way to heads-up, and the charts only know six names, so the short
+ * tables drop the middle ones in the order a real table does.
+ */
+const POS_BY_COUNT: Position[][] = [
+  [],
+  ["BTN"],
+  ["BTN", "BB"], // heads-up: the button is the small blind
+  ["BTN", "SB", "BB"],
+  ["BTN", "SB", "BB", "UTG"],
+  ["BTN", "SB", "BB", "UTG", "CO"],
+  POS6,
+  ["BTN", "SB", "BB", "UTG", "UTG", "MP", "CO"],
+  ["BTN", "SB", "BB", "UTG", "UTG", "MP", "MP", "CO"],
+  POS9,
+];
+
+/** Seats still in the game, in seat order. */
+export function seatedIds(s: GameState): number[] {
+  return s.players.filter((p) => !p.sittingOut).map((p) => p.id);
+}
+
+/** Seats still in the game, ordered from the button round. */
+function orderFromButton(s: GameState): number[] {
+  const seated = seatedIds(s);
+  const at = Math.max(0, seated.indexOf(s.button));
+  return [...seated.slice(at), ...seated.slice(0, at)];
+}
 
 function clone(s: GameState): GameState {
   return {
@@ -107,21 +139,22 @@ function seatAtOffset(s: GameState, offset: number): number {
   return (s.button + offset) % s.config.seats;
 }
 
-function assignPositions(s: GameState) {
+/** The next seat after `from` that is still in the game. */
+function nextSeated(s: GameState, from: number): number {
   const n = s.config.seats;
-  for (let seat = 0; seat < n; seat++) {
-    const off = (seat - s.button + n) % n;
-    if (n === 2) {
-      // Heads-up: the button IS the small blind.
-      s.players[seat].position = off === 0 ? "BTN" : "BB";
-    } else if (n === 9) {
-      s.players[seat].position = POS9[off];
-    } else if (n === 6) {
-      s.players[seat].position = POS6[off];
-    } else {
-      s.players[seat].position = off === 0 ? "BTN" : off === 1 ? "SB" : off === 2 ? "BB" : "MP";
-    }
+  for (let k = 1; k <= n; k++) {
+    const q = (from + k) % n;
+    if (!s.players[q].sittingOut) return q;
   }
+  return from;
+}
+
+function assignPositions(s: GameState) {
+  const order = orderFromButton(s);
+  const table = POS_BY_COUNT[order.length] ?? POS9;
+  order.forEach((id, off) => {
+    s.players[id].position = table[off] ?? "MP";
+  });
 }
 
 function commit(s: GameState, p: Player, amount: number) {
@@ -142,13 +175,32 @@ function postBlind(s: GameState, seat: number, amount: number, label: string) {
 export function startHand(prev: GameState): GameState {
   const s = clone(prev);
   s.handNumber += 1;
-  if (s.handNumber > 1) s.button = (s.button + 1) % s.config.seats;
+
+  // An empty stack is either topped back up (the default: the table keeps its
+  // shape so every hand is a full-ring rep) or it is the end of that bot's
+  // game, and the table plays on short-handed. The hero is never sat out
+  // here — the session layer ends the session on a busted hero.
+  const rebuy = s.config.botRebuy !== false;
+  for (const p of s.players) {
+    if (p.stack > 0 || p.sittingOut) continue;
+    if (rebuy || p.isHero) p.stack = s.config.startingStack;
+    else p.sittingOut = true;
+  }
+
+  // The button only ever sits on a player who is still in the game. The
+  // `handNumber` guard keeps hand #1 on the button `createTable` drew — but
+  // not when that seat is already out, which a restored play-down table can
+  // hand us.
+  if (s.handNumber > 1 || s.players[s.button].sittingOut) {
+    s.button = nextSeated(s, s.button);
+  }
 
   for (const p of s.players) {
-    if (p.stack <= 0) p.stack = s.config.startingStack; // auto-rebuy for continuous training
     p.hole = null;
     p.revealed = false;
-    p.hasFolded = false;
+    // A seat that is out plays no part in the hand, and every "is this player
+    // still in?" test in the engine already asks `hasFolded`.
+    p.hasFolded = p.sittingOut;
     p.foldedStreet = undefined;
     p.vpipThisHand = false;
     p.pfrThisHand = false;
@@ -157,7 +209,7 @@ export function startHand(prev: GameState): GameState {
     p.committedTotal = 0;
     p.acted = false;
     p.lastAction = null;
-    p.handsSeen += 1;
+    if (!p.sittingOut) p.handsSeen += 1;
   }
 
   s.board = [];
@@ -172,7 +224,9 @@ export function startHand(prev: GameState): GameState {
   assignPositions(s);
 
   s.deck = shuffle(makeDeck());
-  for (const p of s.players) p.hole = [s.deck.pop()!, s.deck.pop()!];
+  for (const p of s.players) {
+    if (!p.sittingOut) p.hole = [s.deck.pop()!, s.deck.pop()!];
+  }
   s.stacksAtStart = s.players.map((p) => p.stack);
 
   // Antes (if configured) go straight to the pot: they count toward
@@ -180,6 +234,7 @@ export function startHand(prev: GameState): GameState {
   const ante = s.config.ante ?? 0;
   if (ante > 0) {
     for (const p of s.players) {
+      if (p.sittingOut) continue;
       const a = Math.min(ante, p.stack);
       p.stack -= a;
       p.committedTotal += a;
@@ -188,10 +243,12 @@ export function startHand(prev: GameState): GameState {
     }
   }
 
-  // Heads-up: the button posts the SMALL blind and acts first preflop.
-  const headsUp = s.config.seats === 2;
-  const sbSeat = headsUp ? s.button : seatAtOffset(s, 1);
-  const bbSeat = headsUp ? seatAtOffset(s, 1) : seatAtOffset(s, 2);
+  // Blinds and the first actor count round the players still in the game, so
+  // a table that has played down to three deals like a three-handed table.
+  const order = orderFromButton(s);
+  const headsUp = order.length === 2;
+  const sbSeat = headsUp ? order[0] : order[1 % order.length];
+  const bbSeat = headsUp ? order[1] : order[2 % order.length];
   postBlind(s, sbSeat, s.smallBlind, "SB");
   postBlind(s, bbSeat, s.bigBlind, "BB");
   s.aggressor = bbSeat;
@@ -203,7 +260,9 @@ export function startHand(prev: GameState): GameState {
     "deal",
   );
 
-  s.toAct = headsUp ? nextLiveActor(s, sbSeat, true) : nextLiveActor(s, seatAtOffset(s, 3), true);
+  s.toAct = headsUp
+    ? nextLiveActor(s, sbSeat, true)
+    : nextLiveActor(s, order[3 % order.length], true);
   return s;
 }
 
@@ -406,8 +465,52 @@ interface RawPot {
   eligible: number[];
 }
 
-function buildSidePots(contribs: { id: number; amt: number; folded: boolean }[]): RawPot[] {
-  let rem = contribs.filter((c) => c.amt > 0).map((c) => ({ ...c }));
+export interface PotBreakdown {
+  pots: RawPot[];
+  uncalled?: UncalledBet;
+}
+
+type Contribution = { id: number; amt: number; folded: boolean };
+
+/**
+ * The top of the last bet, when only one player put it in, was never called:
+ * the dealer pushes it straight back, so it is not part of any pot. A folded
+ * top contributor is a different thing — those chips are dead money and stay
+ * in, which is why this only fires for a live player.
+ */
+function takeUncalled(contribs: Contribution[]): { rest: Contribution[]; uncalled?: UncalledBet } {
+  const live = contribs.filter((c) => c.amt > 0);
+  if (live.length < 2) return { rest: contribs };
+  const byAmt = [...live].sort((a, b) => b.amt - a.amt);
+  const [top, second] = byAmt;
+  if (top.folded || top.amt <= second.amt) return { rest: contribs };
+  const excess = top.amt - second.amt;
+  return {
+    rest: contribs.map((c) => (c.id === top.id ? { ...c, amt: second.amt } : c)),
+    uncalled: { playerId: top.id, amount: excess, inPot: false },
+  };
+}
+
+function sameEligible(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+/**
+ * Split total contributions into main + side pots.
+ *
+ * A side pot exists to separate chips a short all-in player cannot win, so a
+ * new one starts only where the set of players eligible for it changes.
+ * Consecutive betting levels contested by exactly the same people are one
+ * pot — splitting on every level turned a single three-way all-in into
+ * "Main pot / Side pot 1 / Side pot 2 / Side pot 3", which reads like three
+ * separate contests that never happened.
+ *
+ * Folded players' chips are dead money in whichever level they reached; a
+ * level with no live player rolls forward into the next one.
+ */
+export function buildSidePots(contribs: Contribution[]): PotBreakdown {
+  const { rest, uncalled } = takeUncalled(contribs.map((c) => ({ ...c })));
+  let rem = rest.filter((c) => c.amt > 0).map((c) => ({ ...c }));
   const pots: RawPot[] = [];
   let carry = 0;
   while (rem.length) {
@@ -418,23 +521,36 @@ function buildSidePots(contribs: { id: number; amt: number; folded: boolean }[])
       carry = amount; // dead money rolls forward
     } else {
       carry = 0;
-      pots.push({ amount, eligible });
+      const last = pots[pots.length - 1];
+      if (last && sameEligible(last.eligible, eligible)) last.amount += amount;
+      else pots.push({ amount, eligible });
     }
     rem = rem.map((c) => ({ ...c, amt: c.amt - min })).filter((c) => c.amt > 0);
   }
-  return pots;
+  // Dead money with no level above it to join (only reachable when a folded
+  // player out-contributed everyone still live) belongs to the last real pot
+  // rather than vanishing off the table.
+  if (carry > 0 && pots.length) pots[pots.length - 1].amount += carry;
+  return { pots, uncalled };
 }
 
 function settleByFold(s: GameState, winnerId: number) {
   const w = s.players[winnerId];
   const amount = s.pot;
   w.stack += amount;
+  // Everyone folded, so the top of the winner's own bet was never called.
+  // The pot result still reports the whole pot — the number the table has
+  // been showing all hand — but the refund is recorded so the hand history
+  // can account for it exactly instead of re-deriving it.
+  const matched = Math.max(0, ...s.players.filter((p) => p.id !== winnerId).map((p) => p.committedTotal));
+  const excess = Math.max(0, w.committedTotal - matched);
   s.summary = {
     handNumber: s.handNumber,
     potResults: [{ winners: [winnerId], amount, potLabel: "Pot" }],
     showdown: [],
     board: [...s.board],
     heroNetChips: s.players[0].stack - s.stacksAtStart[0],
+    uncalled: excess > 0 ? { playerId: winnerId, amount: excess, inPot: true } : undefined,
   };
   pushLog(s, s.street, `${w.name} wins ${amount} (uncontested)`, "result");
   // Learning reveal: at hand end every dealt hand is shown, folds included.
@@ -455,8 +571,20 @@ function settleShowdown(s: GameState) {
   }
 
   const contribs = s.players.map((p) => ({ id: p.id, amt: p.committedTotal, folded: p.hasFolded }));
-  const pots = buildSidePots(contribs);
+  const { pots, uncalled } = buildSidePots(contribs);
   const potResults: PotResult[] = [];
+
+  // The uncalled chips go back before anything is awarded, exactly as a
+  // dealer returns them — they were never anybody's to win.
+  if (uncalled) {
+    s.players[uncalled.playerId].stack += uncalled.amount;
+    pushLog(
+      s,
+      "showdown",
+      `${s.players[uncalled.playerId].name} gets ${uncalled.amount} back (uncalled bet)`,
+      "result",
+    );
+  }
 
   pots.forEach((pot, idx) => {
     const contenders = pot.eligible.filter((id) => liveIds.includes(id));
@@ -499,6 +627,7 @@ function settleShowdown(s: GameState) {
     showdown,
     board: [...s.board],
     heroNetChips: s.players[0].stack - s.stacksAtStart[0],
+    uncalled,
   };
   for (const pr of potResults) {
     pushLog(

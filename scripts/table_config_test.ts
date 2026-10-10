@@ -66,7 +66,12 @@ for (const { name, config } of CONFIGS) {
     ok(totalAfter === totalBefore, `${name}: chip conservation`);
     ok(state.players.every((p) => p.stack >= 0), `${name}: no negative stacks`);
     if (state.summary) {
-      const dist = state.summary.potResults.reduce((a, b) => a + b.amount, 0);
+      // Awarded pots plus any returned bet the pot results do not already
+      // carry (a fold-out reports the whole pot, `inPot: true`).
+      const u = state.summary.uncalled;
+      const dist =
+        state.summary.potResults.reduce((a, b) => a + b.amount, 0) +
+        (u && !u.inPot ? u.amount : 0);
       ok(dist === state.pot, `${name}: pot fully distributed`);
     }
   }

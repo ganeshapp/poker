@@ -1,4 +1,4 @@
-import type { Card, PotResult, Position, Street, ActionType } from "../types/poker.ts";
+import type { Card, PotResult, Position, Street, ActionType, UncalledBet } from "../types/poker.ts";
 import { evaluateCards } from "../engine/evaluator.ts";
 
 /* ==================================================================
@@ -43,9 +43,24 @@ export interface HHHand {
   board: Card[];
   potResults: PotResult[];
   heroNet: number;
+  /** Seats at the table, even when some are sitting out. */
+  tableSize?: number;
+  /** What the engine actually returned; absent on imported/legacy hands. */
+  uncalled?: UncalledBet;
 }
 
 const STREET_ORDER: Street[] = ["preflop", "flop", "turn", "river"];
+
+/**
+ * What a blind seat actually put in. A stack shorter than the blind posts all
+ * of it and no more, and the uncalled-bet arithmetic below is wrong whenever
+ * the nominal blind is used instead — which a play-down table, full of
+ * sub-blind stacks, hits often.
+ */
+function postedBlind(h: HHHand, seat: number, blind: number): number {
+  const stack = h.seats.find((s) => s.seat === seat)?.stack;
+  return stack === undefined ? blind : Math.min(blind, Math.max(0, stack));
+}
 
 function seatNo(seat: number): number {
   return seat + 1;
@@ -114,7 +129,11 @@ export function formatHand(h: HHHand): string {
   lines.push(
     `PokerStars Hand #${exportHandId(h)}: Hold'em No Limit (${h.sb}/${h.bb}) - ${psDate(h.startedAt)} ET`,
   );
-  lines.push(`Table 'All-In Dojo' ${h.seats.length}-max Seat #${seatNo(h.button)} is the button`);
+  // The table size is a property of the table, not of how many seats are
+  // occupied this hand: a play-down session must not export itself as
+  // 6-max, then 5-max, then 4-max, which no real site emits and trackers
+  // classify as different tables.
+  lines.push(`Table 'All-In Dojo' ${h.tableSize ?? h.seats.length}-max Seat #${seatNo(h.button)} is the button`);
 
   for (const s of h.seats) {
     lines.push(`Seat ${seatNo(s.seat)}: ${s.name} (${s.stack} in chips)`);
@@ -151,8 +170,8 @@ export function formatHand(h: HHHand): string {
   const emitStreet = (street: Street) => {
     const acts = h.actions.filter((a) => a.street === street);
     if (street === "preflop") {
-      committed[h.sbSeat] = h.sb;
-      committed[h.bbSeat] = h.bb;
+      committed[h.sbSeat] = postedBlind(h, h.sbSeat, h.sb);
+      committed[h.bbSeat] = postedBlind(h, h.bbSeat, h.bb);
     } else {
       if (street === "flop" && h.board.length >= 3) lines.push(`*** FLOP *** [${h.board.slice(0, 3).join(" ")}]`);
       else if (street === "turn" && h.board.length >= 4)
@@ -178,21 +197,35 @@ export function formatHand(h: HHHand): string {
   const commits = h.seats
     .map((s) => ({ seat: s.seat, amt: committed[s.seat] ?? 0 }))
     .sort((a, b) => b.amt - a.amt);
-  const uncalled = commits.length > 1 ? commits[0].amt - commits[1].amt : 0;
-  const uncalledSeat = uncalled > 0 ? commits[0].seat : null;
+  // The engine says exactly what it returned and whether the pot results
+  // still carry it. Only an imported or pre-this-version hand has to be
+  // guessed at, and then a folded top contributor is never handed chips back:
+  // their unmatched excess stays in the pot as dead money.
+  const topLive = commits.length > 1 && !foldedOn.has(commits[0].seat);
+  const derived = topLive ? commits[0].amt - commits[1].amt : 0;
+  const uncalled = h.uncalled ? h.uncalled.amount : derived;
+  const uncalledSeat =
+    uncalled > 0 ? (h.uncalled ? h.uncalled.playerId : commits[0].seat) : null;
+  // Was it already taken out of `potResults`? The engine knows; a legacy hand
+  // only carries the whole pot when it folded out.
+  const uncalledStillInPot = h.uncalled ? h.uncalled.inPot : live.length <= 1;
   if (uncalledSeat != null) {
     const name = h.seats.find((s) => s.seat === uncalledSeat)?.name ?? "";
     lines.push(`Uncalled bet (${uncalled}) returned to ${name}`);
   }
 
-  // What each seat actually collects (pot totals minus any returned bet).
+  // What each seat actually collects. A hand that folded out reports the
+  // whole pot, the winner's own uncalled bet included, so that has to come
+  // back out here. A showdown's pot results never carry it — the engine
+  // returns it before it awards anything — and neither do the "collected"
+  // lines of an imported history, so subtracting there would charge it twice.
   const collected = new Map<number, number>();
   for (const p of h.potResults) {
     for (const w of p.winners) {
       collected.set(w, (collected.get(w) ?? 0) + Math.round(p.amount / p.winners.length));
     }
   }
-  if (uncalledSeat != null) {
+  if (uncalledSeat != null && uncalledStillInPot) {
     collected.set(uncalledSeat, Math.max(0, (collected.get(uncalledSeat) ?? 0) - uncalled));
   }
 
@@ -263,9 +296,11 @@ export function buildReplayFrames(h: HHHand): ReplayFrame[] {
   const frames: ReplayFrame[] = [];
   const committed: Record<number, number> = {};
   for (const s of h.seats) committed[s.seat] = 0;
-  committed[h.sbSeat] = h.sb;
-  committed[h.bbSeat] = h.bb;
-  let pot = h.sb + h.bb;
+  const sbPosted = postedBlind(h, h.sbSeat, h.sb);
+  const bbPosted = postedBlind(h, h.bbSeat, h.bb);
+  committed[h.sbSeat] = sbPosted;
+  committed[h.bbSeat] = bbPosted;
+  let pot = sbPosted + bbPosted;
   const folded: number[] = [];
   const bb = (chips: number) => {
     const v = chips / h.bb;
@@ -319,13 +354,19 @@ export function buildReplayFrames(h: HHHand): ReplayFrame[] {
   const winnerIds = [...new Set(h.potResults.flatMap((p) => p.winners))];
   const names = winnerIds.map((id) => h.seats.find((s) => s.seat === id)?.name ?? `Seat ${id + 1}`);
   const total = h.potResults.reduce((a, b) => a + b.amount, 0);
+  // Chips nobody matched never reached the pot that gets won, so the closing
+  // frame shows the pot that was actually played for — otherwise it sits next
+  // to "You win 50 bb" reading 125 bb with nothing to explain the gap. A
+  // folded-out hand keeps the whole pot (`inPot`), and a hand with no record
+  // of a refund is left exactly as it was.
+  const endPot = h.uncalled && !h.uncalled.inPot ? Math.max(0, pot - h.uncalled.amount) : pot;
   const endStreet: Street =
     h.board.length >= 5 ? "showdown" : h.board.length === 4 ? "turn" : h.board.length === 3 ? "flop" : "preflop";
   frames.push({
     text: names.length ? `${names.join(", ")} win ${bb(total)} bb.` : "Hand over.",
     street: endStreet,
     board: [...h.board],
-    pot,
+    pot: endPot,
     folded: [...folded],
     revealAll: true,
   });

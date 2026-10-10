@@ -48,7 +48,12 @@ for (let h = 0; h < HANDS; h++) {
   ok([0, 3, 4, 5].includes(state.board.length), "valid board length");
 
   if (state.summary) {
-    const dist = state.summary.potResults.reduce((a, b) => a + b.amount, 0);
+    // The pot is the awarded pots plus any returned bet the pot results do
+    // not already carry (a fold-out reports the whole pot, `inPot: true`).
+    const u = state.summary.uncalled;
+    const dist =
+      state.summary.potResults.reduce((a, b) => a + b.amount, 0) +
+      (u && !u.inPot ? u.amount : 0);
     ok(dist === state.pot, "pot fully distributed");
     if (state.summary.showdown.length > 0) showdowns++;
     if (state.board.length === 5 && state.summary.showdown.length >= 2) {
