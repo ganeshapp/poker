@@ -10,7 +10,7 @@ import { legalActions } from "./engine.ts";
 import { cardToInt } from "../engine/cards.ts";
 import { hashSeed, comboToInts, type EquityResult } from "../engine/equity.ts";
 import { countOuts, describeOuts, ruleOfTwoFour } from "../engine/outs.ts";
-import { readBotAction, boardShape, type BotMoveSnapshot } from "./botRead.ts";
+import { boardShape, type BotMoveSnapshot } from "./botRead.ts";
 import { fmtBb, fmtNeed, fmtTimes } from "../lib/format.ts";
 import { ARCHETYPES } from "./archetypes.ts";
 import { buildPreflopRanges } from "../engine/ranges.ts";
@@ -24,7 +24,7 @@ import type {
   Player,
   Position,
 } from "../types/poker.ts";
-import type { CoachReview } from "../store/coachTypes.ts";
+import type { CoachReview, Verdict } from "../store/coachTypes.ts";
 
 /** Settings the coach needs, passed in so this module owns no store. */
 export interface CoachSettings {
@@ -113,10 +113,11 @@ export function snapshotMove(
       playersIn: t.players.filter((q) => !q.hasFolded && !q.sittingOut).length,
       wasPreflopRaiser: t.players[seat].pfrThisHand,
       // A raise after their own check on this street is a check-raise.
-      checkedThisStreet: p.acted && p.lastAction?.label === "Check" && p.lastAction.street === t.street,
+      checkedThisStreet:
+        p.acted && p.lastAction?.label === "Check" && p.lastAction?.street === t.street,
       betLastStreet: t.aggressor === seat && t.street !== "preflop",
       handsSeen: p.handsSeen,
-      rangeCombos: rangeLabels.length ? comboCount(rangeLabels) : 0,
+      rangeCombos: rangeLabels.length ? combosInSet(new Set(rangeLabels)) : 0,
     },
   };
 }
@@ -217,7 +218,6 @@ export async function evaluateHero(
     oppRanges.length > 0 && state.board.length >= 3 && state.board.length <= 4
       ? countOuts(comboToInts(hero.hole as [Card, Card]), state.board.map(cardToInt), oppRanges)
       : null;
-  const cardsToCome = state.board.length === 3 ? 2 : 1;
   const outsLine = outs && !outs.ahead && outs.count > 0 ? describeOuts(outs) : "";
   const outsPlain =
     outs && !outs.ahead && outs.count > 0

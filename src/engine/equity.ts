@@ -28,7 +28,7 @@ export interface EquityResult {
   exact: boolean;
 }
 
-type IntCombo = [number, number];
+export type IntCombo = [number, number];
 
 export function comboToInts(combo: [Card, Card]): IntCombo {
   return [cardToInt(combo[0]), cardToInt(combo[1])];

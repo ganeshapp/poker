@@ -5,6 +5,7 @@ import {
   equityVsRange as tsEquityVsRange,
   equityVsRandom as tsEquityVsRandom,
   equityVsField as tsEquityVsField,
+  equityVsRanges as tsEquityVsRanges,
   equityRangeVsRange as tsEquityRangeVsRange,
   comboToInts,
   type EquityResult,
@@ -116,6 +117,8 @@ async function fallback(job: EquityJob): Promise<EquityResult> {
       return tsEquityVsField(job.hero, job.board, job.opponents, job.iters);
     case "rangeVsRange":
       return tsEquityRangeVsRange(job.heroRange, job.board, job.villRange, job.iters);
+    case "ranges":
+      return tsEquityVsRanges(job.hero, job.board, job.ranges, job.iters, job.seed);
   }
 }
 

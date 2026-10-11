@@ -2,18 +2,11 @@ import { create } from "zustand";
 import { applyAction, createTable, legalActions, startHand } from "@/game/engine";
 import { decideBot } from "@/game/botBrain";
 import { engine as math } from "@/engine/engineClient";
-import { cardToInt } from "@/engine/cards";
-import { hashSeed, comboToInts } from "@/engine/equity";
 import { readBotAction, type BotMoveSnapshot } from "@/game/botRead";
 import { evaluateHero, villainRangeFor, scoreGuess, snapshotMove } from "@/game/coach";
-import { countOuts, describeOuts, ruleOfTwoFour } from "@/engine/outs";
-import { fmtBb, fmtNeed, fmtTimes } from "@/lib/format";
 import { useSettings, coachThresholds } from "./settingsStore";
 import { useGoals } from "./goalStore";
 import { ARCHETYPES } from "@/game/archetypes";
-import { buildPreflopRanges } from "@/engine/ranges";
-import { PREFLOP_100 } from "@/data/preflop";
-import { combosInSet, comboCount, cardsToLabel, labelToCombos } from "@/engine/notation";
 import type { HHHand } from "@/game/handHistory";
 import type {
   Action,
@@ -22,7 +15,6 @@ import type {
   GameConfig,
   GameState,
   HandLabel,
-  Player,
   Street,
 } from "@/types/poker";
 import { useStats } from "./statsStore";
@@ -30,6 +22,7 @@ import { useLeaks } from "./leakStore";
 import type { DrillAction, DrillOption } from "@/engine/puzzles";
 
 export type { Verdict, CoachReview } from "./coachTypes";
+import type { CoachReview } from "./coachTypes";
 
 
 export interface GuessSession {
