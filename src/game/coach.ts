@@ -111,7 +111,7 @@ export function snapshotMove(
       amount,
       pot: t.pot,
       playersIn: t.players.filter((q) => !q.hasFolded && !q.sittingOut).length,
-      wasPreflopRaiser: t.players[seat].pfrThisHand,
+      wasPreflopRaiser: t.players[seat].pfrThisHand === true,
       // A raise after their own check on this street is a check-raise.
       checkedThisStreet:
         p.acted && p.lastAction?.label === "Check" && p.lastAction?.street === t.street,
