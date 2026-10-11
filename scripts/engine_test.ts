@@ -6,6 +6,9 @@ import { evaluateCards, evaluateInts } from "../src/engine/evaluator.ts";
 import { HandCategory } from "../src/types/poker.ts";
 import { cardToInt } from "../src/engine/cards.ts";
 import { buildSidePots, createTable, startHand, seatedIds } from "../src/game/engine.ts";
+import { countOuts, describeOuts, ruleOfTwoFour } from "../src/engine/outs.ts";
+import { equityVsField, equityVsRanges } from "../src/engine/equity.ts";
+import { readBotAction } from "../src/game/botRead.ts";
 import { equityVsRange, equityVsRandom, comboToInts } from "../src/engine/equity.ts";
 import {
   allLabels,
@@ -233,6 +236,86 @@ ok(mc.exact === false && mc.se > 0 && mc.se < 0.02, "MC result carries a plausib
     "heads-up posts exactly one small blind",
   );
   ok(btn !== undefined, "a seated player holds the button");
+}
+
+// ---- Outs: the human version of the equity number ----
+{
+  const toR = (ls: string[]) => ls.flatMap((l) => labelToCombos(l)).map(comboToInts);
+  const RANGE = toR(["77","88","99","TT","JJ","QQ","KK","AA","AJs","ATs","KQs","QJs","JTs","T9s","98s","87s","76s","65s","54s","AQo","AJo","KQo"]);
+  const b = (cs: string[]) => cs.map((c) => cardToInt(c as never));
+
+  // The textbook counts, which is the point: these are the numbers a player
+  // already knows, so the coach saying anything else would be wrong.
+  // A bare flush draw is the textbook nine; the same draw with two cards
+  // above the board is the textbook fifteen. Both have to come out right.
+  const flush = countOuts(comboToInts(["7h", "6h"] as never), b(["Ah", "9s", "2h"]), [RANGE]);
+  ok(flush.count === 9, "a bare flush draw is nine outs");
+  ok(flush.groups[0].cardsLabel === "nine hearts", "and they are named as nine hearts");
+
+  const flushOver = countOuts(comboToInts(["Ah", "Kh"] as never), b(["9h", "5s", "2h"]), [RANGE]);
+  ok(flushOver.count === 15, "a flush draw with two overcards is fifteen outs");
+
+  const oesd = countOuts(comboToInts(["9s", "8s"] as never), b(["7h", "6d", "2c"]), [RANGE]);
+  ok(oesd.count === 8, "an open-ended straight draw is eight outs");
+
+  // The hand that cost 100 bb: four outs, to the small end, and the warning.
+  const gut = countOuts(comboToInts(["Qs", "2d"] as never), b(["6h", "5s", "4h"]), [RANGE, RANGE]);
+  ok(gut.count === 4, "queen-high with a gutshot is four outs, not seven");
+  ok(gut.groups[0].cardsLabel === "the four 3s", "named as the four 3s");
+  ok(!!gut.groups[0].caution, "and flagged as the small end of the straight");
+  ok((gut.holdUp ?? 1) < 0.9, "because it does not always hold up when it lands");
+  ok(describeOuts(gut).includes("the four 3s"), "the sentence names the cards");
+
+  const made = countOuts(comboToInts(["7s", "7d"] as never), b(["7h", "Kd", "2c"]), [RANGE]);
+  ok(made.ahead && made.count === 0, "a set is ahead, so it is not counted as drawing");
+
+  ok(Math.round(ruleOfTwoFour(9, 1) * 100) === 18, "2/4 rule: 9 outs is 18% on one card");
+  ok(Math.round(ruleOfTwoFour(9, 2) * 100) === 36, "2/4 rule: 9 outs is 36% by the river");
+}
+
+// ---- Multiway equity vs real ranges, not random cards ----
+{
+  const toR = (ls: string[]) => ls.flatMap((l) => labelToCombos(l)).map(comboToInts);
+  const LAG = toR(["22","33","44","55","66","77","88","99","TT","JJ","QQ","KK","AA","A2s","A5s","A9s","ATs","AJs","AQs","AKs","KTs","KJs","KQs","QTs","QJs","JTs","T9s","98s","87s","76s","65s","54s","ATo","AJo","AQo","AKo","KQo","QJo"]);
+  const hero = comboToInts(["Qs", "2d"] as never);
+  const rand = equityVsField(hero, [], 2, 4000, 7);
+  const real = equityVsRanges(hero, [], [LAG, LAG], 4000, 7);
+  ok(real.samples > 3000, "ranges equity keeps nearly all of its trials");
+  ok(real.equity < rand.equity - 0.05, "a weak hand scores worse against real ranges than random cards");
+  // The exact flip that graded a losing call as a "thin spot".
+  ok(rand.equity > 0.23 && real.equity < 0.23, "Q2o vs two opponents: call becomes fold");
+  const again = equityVsRanges(hero, [], [LAG, LAG], 4000, 7);
+  ok(again.equity === real.equity, "same seed gives the same answer");
+}
+
+// ---- Reading an opponent's move: board and action, not archetype ----
+{
+  const snap = {
+    name: "Rafa", archetype: "TAG" as const, street: "flop" as const,
+    board: ["6h", "5s", "4h"] as never, action: "bet" as const, amount: 60, pot: 200,
+    playersIn: 3, wasPreflopRaiser: false, checkedThisStreet: false, betLastStreet: false,
+    handsSeen: 40, rangeCombos: 517,
+  };
+  const bet = readBotAction(snap);
+  ok(bet.plain.includes("three low cards in a row"), "the read names the board, not the archetype");
+  ok(!bet.plain.includes("(TAG)"), "the style is never the headline");
+  ok(bet.expert.some((e) => e.startsWith("One adjustment:")), "the style is an adjustment at the end");
+
+  const xr = readBotAction({ ...snap, action: "raise", checkedThisStreet: true });
+  ok(xr.title.includes("check-raise"), "a check-raise is recognised as one");
+  ok(xr.plain !== bet.plain, "and does not read like a plain bet");
+
+  const gaveUp = readBotAction({ ...snap, street: "turn", action: "check", betLastStreet: true });
+  ok(gaveUp.plain.includes("given up"), "bet-then-check is read as giving up");
+
+  const newbie = readBotAction({ ...snap, handsSeen: 4 });
+  ok(
+    newbie.expert.some((e) => e.includes("not enough to call them anything yet")),
+    "four hands is not a read, and the app says so",
+  );
+
+  const big = readBotAction({ ...snap, board: ["Kh", "Qs", "Jd"] as never });
+  ok(big.plain !== bet.plain, "a board of big cards reads differently from low connected cards");
 }
 
 console.log(`\nEngine tests: ${passed} passed, ${failed} failed.`);

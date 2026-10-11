@@ -217,6 +217,28 @@ export const engine = {
   },
 
   /**
+   * Hero vs several opponents, each from their own range — the multiway
+   * answer the coach grades with. No native command yet, so it runs in the
+   * worker (or sync TS) like range-vs-range does.
+   */
+  async equityVsRanges(
+    hero: [Card, Card],
+    board: Card[],
+    ranges: [number, number][][],
+    iters = 2000,
+    seed?: number,
+  ): Promise<EquityResult> {
+    return fallback({
+      kind: "ranges",
+      hero: comboToInts(hero),
+      board: board.map(cardToInt),
+      ranges,
+      iters,
+      seed,
+    });
+  },
+
+  /**
    * Range-vs-range equity for the free-form calculator. No native
    * command exists for this yet, so it always runs in the worker
    * (or sync TS as a last resort) — still off the main thread.

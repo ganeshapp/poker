@@ -2,6 +2,7 @@ import {
   equityVsRange,
   equityVsRandom,
   equityVsField,
+  equityVsRanges,
   equityRangeVsRange,
   type EquityResult,
 } from "./equity.ts";
@@ -17,7 +18,8 @@ export type EquityJob =
   | { kind: "range"; hero: [number, number]; board: number[]; range: [number, number][]; iters: number; seed?: number }
   | { kind: "random"; hero: [number, number]; board: number[]; iters: number; seed?: number }
   | { kind: "field"; hero: [number, number]; board: number[]; opponents: number; iters: number; seed?: number }
-  | { kind: "rangeVsRange"; heroRange: [number, number][]; board: number[]; villRange: [number, number][]; iters: number; seed?: number };
+  | { kind: "rangeVsRange"; heroRange: [number, number][]; board: number[]; villRange: [number, number][]; iters: number; seed?: number }
+  | { kind: "ranges"; hero: [number, number]; board: number[]; ranges: [number, number][][]; iters: number; seed?: number };
 
 export interface EquityRequest {
   id: number;
@@ -37,6 +39,8 @@ function runJob(job: EquityJob): EquityResult {
       return equityVsRandom(job.hero, job.board, job.iters, job.seed);
     case "field":
       return equityVsField(job.hero, job.board, job.opponents, job.iters, job.seed);
+    case "ranges":
+      return equityVsRanges(job.hero, job.board, job.ranges, job.iters, job.seed);
     case "rangeVsRange":
       return equityRangeVsRange(job.heroRange, job.board, job.villRange, job.iters, job.seed);
   }

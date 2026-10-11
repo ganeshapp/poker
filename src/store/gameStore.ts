@@ -2,13 +2,18 @@ import { create } from "zustand";
 import { applyAction, createTable, legalActions, startHand } from "@/game/engine";
 import { decideBot } from "@/game/botBrain";
 import { engine as math } from "@/engine/engineClient";
-import { hashSeed } from "@/engine/equity";
+import { cardToInt } from "@/engine/cards";
+import { hashSeed, comboToInts } from "@/engine/equity";
+import { readBotAction, type BotMoveSnapshot } from "@/game/botRead";
+import { evaluateHero, villainRangeFor, scoreGuess, snapshotMove } from "@/game/coach";
+import { countOuts, describeOuts, ruleOfTwoFour } from "@/engine/outs";
 import { fmtBb, fmtNeed, fmtTimes } from "@/lib/format";
 import { useSettings, coachThresholds } from "./settingsStore";
 import { useGoals } from "./goalStore";
 import { ARCHETYPES } from "@/game/archetypes";
 import { buildPreflopRanges } from "@/engine/ranges";
-import { combosInSet, comboCount, cardsToLabel } from "@/engine/notation";
+import { PREFLOP_100 } from "@/data/preflop";
+import { combosInSet, comboCount, cardsToLabel, labelToCombos } from "@/engine/notation";
 import type { HHHand } from "@/game/handHistory";
 import type {
   Action,
@@ -24,32 +29,8 @@ import { useStats } from "./statsStore";
 import { useLeaks } from "./leakStore";
 import type { DrillAction, DrillOption } from "@/engine/puzzles";
 
-export type Verdict = "mistake" | "thin" | "ok" | "great" | "info";
+export type { Verdict, CoachReview } from "./coachTypes";
 
-export interface CoachReview {
-  id: number;
-  kind: "decision" | "bot";
-  blocking: boolean;
-  verdict: Verdict;
-  title: string;
-  equity?: number;
-  potOdds?: number;
-  evChips?: number;
-  villainName?: string;
-  villainArchetype?: Archetype;
-  villainRange?: HandLabel[];
-  board: Card[];
-  /** Layer 1 (TONE.md): plain English, no jargon, chances as counts. */
-  plain?: string;
-  /** Layer 2 summary line (may use poker terms). */
-  text: string;
-  /** Layer 2: the step-by-step derivation. */
-  steps?: string[];
-  /** Layer 3: ranges, precision, formulas, methodology. */
-  expert?: string[];
-  opponents?: number;
-  multiway?: boolean;
-}
 
 export interface GuessSession {
   open: boolean;
@@ -91,6 +72,8 @@ interface GameStore {
   activeReviewId: number | null;
   rangeView: { name: string; range: HandLabel[] } | null;
   lastActorSeat: number | null;
+  /** The last bot action, captured as they made it (see `snapshotMove`). */
+  lastBotMove: { seat: number; snapshot: BotMoveSnapshot } | null;
 
   newSession: (opts?: TableOptions) => void;
   endSession: () => void;
@@ -140,306 +123,6 @@ function saveTableOptions(o: TableOptions) {
   }
 }
 const ARCHE_POOL: Archetype[] = ["TAG", "LAG", "Nit", "Station"];
-
-function villainRangeFor(state: GameState, p: Player): HandLabel[] {
-  const stored = state.botRanges[p.id];
-  if (stored && stored.length) return stored;
-  if (p.archetype) {
-    const cfg = ARCHETYPES[p.archetype];
-    return [...buildPreflopRanges(cfg.vpip, cfg.pfr, p.position).play];
-  }
-  return [];
-}
-
-function firstOpponentInHand(state: GameState): number {
-  for (const p of state.players) if (!p.isHero && !p.hasFolded) return p.id;
-  return 1;
-}
-
-export function scoreGuess(painted: HandLabel[], actual: HandLabel[]) {
-  const pSet = new Set(painted);
-  const aSet = new Set(actual);
-  let inter = 0;
-  for (const l of pSet) if (aSet.has(l)) inter += comboCount(l);
-  const pc = combosInSet(pSet);
-  const ac = combosInSet(aSet);
-  const precision = pc > 0 ? inter / pc : 0;
-  const recall = ac > 0 ? inter / ac : 0;
-  const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
-  return { accuracy: f1, precision, recall };
-}
-
-function interpretBot(p: Player): string {
-  if (!p.archetype) return "";
-  const a = p.archetype;
-  const label = p.lastAction?.label ?? "acts";
-  if (label === "Fold") return `${p.name} folds — their range no longer matters this hand.`;
-  if (label === "Check")
-    return `A check from ${p.name} usually means a weak hand — or keeping the pot small. Consider betting to take the pot now.`;
-  if (label === "Call" || label === "All-In") {
-    if (a === "Station") return `${p.name} (Station) calls with almost anything — their possible hands stay very wide and weak. Bet your good hands relentlessly; never bluff.`;
-    if (a === "Nit") return `Even a Nit's call means a fairly strong hand — though they'd raise their very best. Slow down with so-so hands.`;
-    if (a === "LAG") return `${p.name} (LAG) calls with lots of hands, often planning to steal the pot later — keep betting your good hands; expect them to call you down with medium ones.`;
-    return `A call keeps ${p.name}'s possible hands wide — their strongest hands included — proceed with caution.`;
-  }
-  // Bet / Raise
-  if (a === "Nit") return `A raise from a Nit is a red flag — expect a premium. Fold your marginal hands.`;
-  if (a === "Station") return `${p.name} (Station) almost never raises — when they do, it's usually close to the best possible hand.`;
-  if (a === "LAG") return `${p.name} (LAG) raises very wide; this is often a bluff or a bet with only a slim edge. Don't fold too often.`;
-  return `${p.name} (TAG) raises mostly genuinely strong hands, few bluffs. Take it seriously unless you have a strong hand too.`;
-}
-
-async function evaluateHero(state: GameState, action: Action, id: number): Promise<CoachReview | null> {
-  const hero = state.players[0];
-  if (!hero.hole) return null;
-  const la = legalActions(state);
-  // Checks are evaluated too (below) — half the game used to be
-  // invisible to the coach.
-
-  const villId = state.aggressor != null && state.aggressor !== 0 ? state.aggressor : firstOpponentInHand(state);
-  const vill = state.players[villId];
-  const arche = vill.archetype;
-  const cfg = arche ? ARCHETYPES[arche] : null;
-  const range = villainRangeFor(state, vill);
-  const combos = combosInSet(range);
-  const bb = state.bigBlind;
-  const heroLabel = cardsToLabel(hero.hole[0], hero.hole[1]);
-  const boardStr = state.board.length ? state.board.join(" ") : "a pre-flop board";
-  const opponents = state.players.filter((p) => !p.isHero && !p.hasFolded).length;
-  const fieldMode = opponents > 1;
-  const oppDesc = fieldMode ? `the ${opponents}-player field` : `${vill.name}'s range`;
-
-  // Price of the decision — known before simulating, and used both for
-  // verdicts and to decide whether the estimate needs tightening.
-  const costNow =
-    action.type === "check"
-      ? 0
-      : action.type === "fold" || action.type === "call"
-        ? la.callAmount
-        : (action.amount ?? 0) - hero.committed;
-  const finalPotNow = state.pot + costNow;
-  const threshold = finalPotNow > 0 ? costNow / finalPotNow : 0;
-
-  // Deterministic per decision: same spot + same action = same verdict.
-  const seedBase = hashSeed(
-    `${state.handNumber}|${state.street}|${action.type}|${hero.hole.join("")}|${state.board.join("")}`,
-  );
-  const run = (iters: number, seed: number) =>
-    fieldMode
-      ? math.equityVsField(hero.hole as [Card, Card], state.board, opponents, iters, seed)
-      : range.length
-        ? math.equityVsRange(hero.hole as [Card, Card], state.board, range, iters, seed)
-        : math.equityVsRandom(hero.hole as [Card, Card], state.board, iters, seed);
-
-  const appSettings = useSettings.getState();
-  const { mistakeBb, foldFlagBb } = coachThresholds(appSettings.coachStrictness);
-  const baseIters = appSettings.simQuality === "high" ? 4000 : 1600;
-  let equity = 0.5;
-  let trials = 0;
-  let se = 0;
-  let exact = false;
-  try {
-    let r = await run(baseIters, seedBase);
-    // Near the break-even line and still noisy? Escalate before judging.
-    if (!r.exact && costNow > 0 && Math.abs(r.equity - threshold) < 2 * r.se) {
-      r = await run(baseIters * 4, seedBase + 1);
-    }
-    equity = r.equity;
-    trials = r.samples;
-    se = r.se;
-    exact = r.exact;
-  } catch {
-    equity = 0.5;
-  }
-  const margin = 2 * se; // ~95% confidence half-width
-  const pct = Math.round(equity * 100);
-  const baselineNote = `Baseline: verdicts grade vs THIS opponent's likely hands (exploitative). Vs a balanced player the answer can differ — most sharply against extreme types like Stations (value-bet wider, never bluff) and Nits (respect their raises).`;
-  const marginNote = exact
-    ? `Exact count — every possible holding and runout was enumerated, so there's no simulation noise.`
-    : `Simulation precision: ±${(margin * 100).toFixed(1)}% on the equity (${trials.toLocaleString()} trials).`;
-  const sourceLine = fieldMode
-    ? `Equity is run against ${opponents} opponents as random hands (${trials}-trial sim) — more players, lower equity.`
-    : `${vill.name}${cfg ? ` (${cfg.archetype})` : ""} range ≈ ${combos} combos (position + action).`;
-
-  const base = {
-    id,
-    kind: "decision" as const,
-    villainName: vill.name,
-    villainArchetype: arche,
-    villainRange: range,
-    board: [...state.board],
-    opponents,
-    multiway: opponents > 1,
-  };
-
-  if (action.type === "fold") {
-    if (la.toCall <= 0) return null;
-    const cost = la.callAmount;
-    const finalPot = state.pot + cost;
-    const potOdds = cost / finalPot;
-    const evCall = equity * finalPot - cost;
-    // Only flag a fold when the call is profitable even at the
-    // pessimistic edge of the estimate — never on simulation noise.
-    const evCallLow = (equity - margin) * finalPot - cost;
-    if (evCall <= foldFlagBb * bb || evCallLow <= 0) return null;
-    return {
-      ...base,
-      blocking: false,
-      verdict: "mistake",
-      title: "Fold spills value",
-      equity,
-      potOdds,
-      evChips: evCall,
-      plain: `You folded a moneymaker. Calling ${fmtBb(cost, bb)} bb to win a ${fmtBb(finalPot, bb)} bb pot only needs a win ${fmtNeed(potOdds)} — and your hand wins ${fmtTimes(equity)}. That call was worth about +${(evCall / bb).toFixed(1)} bb.`,
-      text: `Against ${oppDesc} your ${heroLabel} has ${pct}% equity and you're getting ${Math.round(potOdds * 100)}% pot odds — calling is worth about +${(evCall / bb).toFixed(1)} bb.`,
-      steps: [
-        `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity.`,
-        `Pot ${state.pot} + call ${cost} = ${finalPot}; pot odds = ${Math.round(potOdds * 100)}%.`,
-        `EV(call) = ${pct}% × ${finalPot} − ${cost} ≈ +${evCall.toFixed(0)} chips (${(evCall / bb).toFixed(1)} bb) > EV(fold)=0.`,
-      ],
-      expert: [sourceLine, marginNote, baselineNote],
-    };
-  }
-
-  const cost = action.type === "call" ? la.callAmount : (action.amount ?? 0) - hero.committed;
-  const finalPot = state.pot + cost;
-  const potOdds = finalPot > 0 ? cost / finalPot : 0;
-  const evAction = equity * finalPot - cost;
-
-  if (action.type === "call") {
-    let verdict: Verdict;
-    let blocking = false;
-    let text: string;
-    let plain: string;
-    const priceLine = `You paid ${fmtBb(cost, bb)} bb to win a pot of ${fmtBb(finalPot, bb)} bb — you need to win ${fmtNeed(potOdds)}.`;
-    // A "mistake" needs the call to lose money even at the optimistic
-    // edge of the estimate; inside the noise band it's just "close".
-    const evActionHigh = (equity + margin) * finalPot - cost;
-    if (evAction < mistakeBb * bb && evActionHigh < 0) {
-      verdict = "mistake";
-      blocking = true;
-      plain = `${priceLine} Your hand wins ${fmtTimes(equity)} — not enough. Over time this call loses money; folding is better.`;
-      text = `Against ${oppDesc} your ${heroLabel} has only ${pct}% equity, but calling needs ${Math.round(potOdds * 100)}%. This call costs about ${(evAction / bb).toFixed(1)} bb — folding is better.`;
-    } else if (evAction < mistakeBb * bb) {
-      verdict = "thin";
-      plain = `Genuinely too close to call: the numbers say roughly break-even here. Either choice is fine.`;
-      text = `Looks slightly losing (~${(evAction / bb).toFixed(1)} bb), but it's within the simulation's margin of error — either choice is reasonable here.`;
-    } else if (equity < potOdds + 0.04) {
-      verdict = "thin";
-      plain = `${priceLine} Your hand wins ${fmtTimes(equity)} — just barely enough. A close call, not a mistake.`;
-      text = `${pct}% equity vs ~${Math.round(potOdds * 100)}% needed — a marginal, close call against ${oppDesc}.`;
-    } else {
-      verdict = equity > 0.7 ? "great" : "ok";
-      plain = `${priceLine} Your hand wins ${fmtTimes(equity)} — comfortably more than you need. Good call.`;
-      text = `${pct}% equity vs ${oppDesc}, needing ${Math.round(potOdds * 100)}% — a clear call worth +${(evAction / bb).toFixed(1)} bb.`;
-    }
-    return {
-      ...base,
-      blocking,
-      verdict,
-      title: "Your call",
-      equity,
-      potOdds,
-      evChips: evAction,
-      plain,
-      text,
-      steps: [
-        `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity.`,
-        `Pot ${state.pot} + your call ${cost} = ${finalPot}; pot odds = ${cost}/${finalPot} = ${Math.round(potOdds * 100)}%.`,
-        `EV(call) = ${pct}% × ${finalPot} − ${cost} ≈ ${evAction.toFixed(0)} chips (${(evAction / bb).toFixed(1)} bb). EV(fold) = 0.`,
-        evAction < 0 ? `Because EV < 0, folding is the higher-EV play.` : `Because EV > 0, calling beats folding.`,
-      ],
-      expert: [sourceLine, marginNote, baselineNote],
-    };
-  }
-
-  if (action.type === "check") {
-    // Only speak up when checking left clear money behind: strong
-    // hands any street, medium-strong only on the river (earlier
-    // streets can legitimately pot-control).
-    if (state.board.length < 3 || equity < 0.65) return null;
-    const strong = equity - margin > 0.75;
-    if (!strong && state.street !== "river") return null;
-    const betTo = Math.round(state.pot * 0.66);
-    return {
-      ...base,
-      blocking: false,
-      verdict: strong ? "mistake" : "thin",
-      title: "Missed value",
-      equity,
-      plain: strong
-        ? `Your hand wins ${fmtTimes(equity)} — that's a hand that wants to bet. Checking here gives up a clear value bet: when you're ahead this often, put chips in and get paid.`
-        : `Your hand wins ${fmtTimes(equity)} — usually strong enough for a small value bet here. Checking is cautious but leaves some money behind.`,
-      text: `${pct}% equity checked ${state.street === "river" ? "on the river" : "back"} — a value bet (~${betTo} chips) was available.`,
-      steps: [
-        `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity.`,
-        `A ~66% pot bet (${betTo}) gets called by enough worse hands to profit when you win this often.`,
-        `Checking wins the same pot but never builds it — EV left behind grows with your win chance.`,
-      ],
-      expert: [sourceLine, marginNote, baselineNote, `Post-flop aggression verdicts are heuristic (no solver) — treat as guidance, not gospel.`],
-    };
-  }
-
-  // bet / raise
-  let verdict: Verdict = "ok";
-  let text: string;
-  let plain: string;
-  // Honest little fold-equity model: opponents continue less often vs
-  // bigger bets; a pure bluff needs foldsNeeded to break even.
-  const betFrac = costNow / Math.max(1, state.pot);
-  const continueFrac = Math.min(0.75, Math.max(0.3, 0.62 - 0.2 * betFrac));
-  const pAllFold = Math.pow(1 - continueFrac, opponents);
-  const foldsNeeded = costNow / (state.pot + costNow);
-  const evBluff = pAllFold * state.pot + (1 - pAllFold) * (equity * (state.pot + 2 * costNow) - costNow);
-  if (equity + margin < 0.32 && evBluff < -0.75 * bb) {
-    return {
-      ...base,
-      blocking: false,
-      verdict: "mistake",
-      title: "Expensive bluff",
-      equity,
-      potOdds,
-      evChips: evBluff,
-      plain: `A very expensive bluff: if anyone calls, your hand wins only ${fmtTimes(equity)}${opponents > 1 ? `, and with ${opponents} opponents someone usually calls` : ""}. You'd need folds ${fmtTimes(foldsNeeded)} just to break even — this bet loses money over time.`,
-      text: `Bluffing ${Math.round(betFrac * 100)}% pot with ${pct}% equity vs ${oppDesc}: estimated EV ${(evBluff / bb).toFixed(1)} bb.`,
-      steps: [
-        `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity when called.`,
-        `Break-even fold rate = bet / (pot + bet) = ${Math.round(foldsNeeded * 100)}%.`,
-        `Assuming each opponent continues ~${Math.round(continueFrac * 100)}% vs this size, everyone folds only ${Math.round(pAllFold * 100)}% of the time.`,
-        `EV ≈ ${Math.round(pAllFold * 100)}% × ${state.pot} + ${Math.round((1 - pAllFold) * 100)}% × (${pct}% × ${state.pot + 2 * costNow} − ${costNow}) ≈ ${evBluff.toFixed(0)} chips.`,
-      ],
-      expert: [sourceLine, marginNote, baselineNote, `The fold-equity model is heuristic (fixed continue rates by bet size, no ranges) — aggression verdicts are approximate by design.`],
-    };
-  }
-  if (equity > 0.6) {
-    verdict = "great";
-    plain = `Betting with the goods: if someone calls, your hand wins ${fmtTimes(equity)}. Money goes in with the best of it — and every fold is profit too.`;
-    text = `Strong value — ${pct}% equity vs ${oppDesc}. Betting is correct.`;
-  } else if (equity < 0.38 && cost > state.pot * 0.5) {
-    verdict = "thin";
-    plain = `This is a bluff: if you get called, your hand only wins ${fmtTimes(equity)}. The bet makes money only when opponents fold — fine as a plan, just know that's the plan.`;
-    text = `Aggressive: only ${pct}% equity if called. Works as a bluff but relies on folds.`;
-  } else {
-    plain = `A solid bet: when called, your hand wins ${fmtTimes(equity)}, and every fold you pick up is pure profit on top.`;
-    text = `${pct}% equity vs ${oppDesc} — a reasonable bet — worse hands may call, and every fold wins you the pot.`;
-  }
-  return {
-    ...base,
-    blocking: false,
-    verdict,
-    title: action.type === "bet" ? "Your bet" : "Your raise",
-    equity,
-    potOdds,
-    evChips: evAction,
-    plain,
-    text,
-    steps: [
-      `${heroLabel} vs ${oppDesc} on ${boardStr} → ${pct}% equity when called.`,
-      `A bet also wins when opponents fold — fold equity isn't shown here, so treat this as the "called" floor.`,
-    ],
-    expert: [sourceLine, marginNote, baselineNote],
-  };
-}
 
 export const useGame = create<GameStore>((set, get) => {
   let loopToken = 0;
@@ -512,9 +195,13 @@ export const useGame = create<GameStore>((set, get) => {
   const applyStep = (seat: number, action: Action, range?: HandLabel[] | null): GameState => {
     const t = get().table;
     recordAction(t, seat, action);
+    // Snapshot BEFORE the action is applied: `applyAction` deals the next
+    // street when the round closes, so reading the table afterwards shows a
+    // board the player never saw.
+    const snap = seat === 0 ? null : snapshotMove(t, seat, action, range ?? null);
     let nt = applyAction(t, seat, action);
     if (range != null) nt = { ...nt, botRanges: { ...nt.botRanges, [seat]: range } };
-    set({ table: nt, lastActorSeat: seat });
+    set({ table: nt, lastActorSeat: seat, lastBotMove: snap ?? get().lastBotMove });
     if (nt.phase === "hand-over") finalizeHand(nt);
     return nt;
   };
@@ -571,6 +258,7 @@ export const useGame = create<GameStore>((set, get) => {
     activeReviewId: null,
     rangeView: null,
     lastActorSeat: null,
+    lastBotMove: null,
 
     newSession: (opts) => {
       const table = opts ?? loadTableOptions();
@@ -677,7 +365,13 @@ export const useGame = create<GameStore>((set, get) => {
       applyStep(0, a);
       maybeAutoLoop();
       if (!coachEnabled) return;
-      const review = await evaluateHero(t, a, id);
+      const st = useSettings.getState();
+      const { mistakeBb, foldFlagBb } = coachThresholds(st.coachStrictness);
+      const review = await evaluateHero(t, a, id, {
+        mistakeBb,
+        foldFlagBb,
+        baseIters: st.simQuality === "high" ? 4000 : 1600,
+      }, math);
       if (review) {
         // Stats and leaks always record; the panel (and a blocking
         // pause) only if the verdict still belongs to the current hand.
@@ -752,20 +446,39 @@ export const useGame = create<GameStore>((set, get) => {
       const seat = s.lastActorSeat;
       if (seat === null || seat === 0) return;
       const p = s.table.players[seat];
-      if (!p.archetype) return;
-      const review: CoachReview = {
+      const snap = s.lastBotMove;
+      if (!snap || snap.seat !== seat) {
+        // Honest rather than boilerplate: the read needs the pot, board and
+        // price from the moment they acted, and that moment is gone.
+        pushReview({
+          id: reviewSeq++,
+          kind: "bot",
+          blocking: false,
+          verdict: "info",
+          title: "Last move",
+          villainName: p.name,
+          villainArchetype: p.archetype,
+          board: [...s.table.board],
+          text: `That read can't be rebuilt — it needs the pot, the board and the price from the moment ${p.name} acted. Ask again after their next action.`,
+        });
+        return;
+      }
+      const read = readBotAction(snap.snapshot);
+      pushReview({
         id: reviewSeq++,
         kind: "bot",
         blocking: false,
         verdict: "info",
-        title: `${p.name}'s ${(p.lastAction?.label ?? "move").toLowerCase()}`,
+        title: read.title,
         villainName: p.name,
         villainArchetype: p.archetype,
-        villainRange: villainRangeFor(s.table, p),
-        board: [...s.table.board],
-        text: interpretBot(p),
-      };
-      pushReview(review);
+        villainRange: read.confidence === "none" ? undefined : villainRangeFor(s.table, p),
+        board: [...snap.snapshot.board],
+        plain: read.plain,
+        text: read.steps[0] ?? read.plain,
+        steps: read.steps,
+        expert: read.expert,
+      });
     },
 
     reopenReview: (id) =>

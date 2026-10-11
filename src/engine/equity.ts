@@ -248,6 +248,111 @@ export function equityVsField(
 }
 
 /**
+ * Hero equity vs several opponents, each holding a hand from their OWN
+ * narrowed range — the multiway answer to `equityVsRange`.
+ *
+ * `equityVsField` deals opponents uniformly random cards, which flatters a
+ * weak hand badly: queen-high on a board of connected low cards looks like a
+ * close call against random hands and is drawing nearly dead against hands
+ * that actually keep betting. Grading against the ranges the bots are really
+ * holding is the difference between "thin spot" and "fold".
+ *
+ * Each trial samples one combo per opponent, re-drawing on a card clash with
+ * the board, the hero or another opponent. A trial that cannot be filled in
+ * `MAX_RETRY` attempts is skipped rather than forced, so a range that is
+ * almost entirely blocked loses sample size instead of gaining a bias toward
+ * whichever combos happen to survive. Ties at the top split the pot.
+ */
+export function equityVsRanges(
+  hero: IntCombo,
+  board: number[],
+  ranges: IntCombo[][],
+  iters = 2000,
+  seed?: number,
+): EquityResult {
+  const used = new Set<number>([hero[0], hero[1], ...board]);
+  // Drop combos that clash with what we can already see.
+  const valid = ranges.map((r) => r.filter((c) => !used.has(c[0]) && !used.has(c[1])));
+  // An opponent with nothing left to hold cannot be modelled; with no usable
+  // opponent at all the caller should fall back to a random field.
+  if (valid.length === 0 || valid.some((r) => r.length === 0)) {
+    return { equity: 0.5, win: 0, tie: 0, lose: 0, samples: 0, se: 0, exact: false };
+  }
+
+  const rand = rngFor(seed);
+  const baseAvail: number[] = [];
+  for (let i = 0; i < 52; i++) if (!used.has(i)) baseAvail.push(i);
+
+  const need = 5 - board.length;
+  const heroBase = [hero[0], hero[1], ...board];
+  const MAX_RETRY = 40;
+  let win = 0;
+  let tie = 0;
+  let lose = 0;
+  let equitySum = 0;
+
+  for (let it = 0; it < iters; it++) {
+    // Pick one hand per opponent, re-drawing when two of them want a card.
+    const taken = new Set<number>();
+    const hands: IntCombo[] = [];
+    let ok = true;
+    for (const r of valid) {
+      let got: IntCombo | null = null;
+      for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+        const c = r[(rand() * r.length) | 0];
+        if (!taken.has(c[0]) && !taken.has(c[1])) {
+          got = c;
+          break;
+        }
+      }
+      if (!got) {
+        ok = false;
+        break;
+      }
+      taken.add(got[0]);
+      taken.add(got[1]);
+      hands.push(got);
+    }
+    if (!ok) continue; // skipped, not forced — see the note above
+
+    // Runout from what nobody is holding.
+    const work = baseAvail.filter((c) => !taken.has(c));
+    let len = work.length;
+    const runout: number[] = [];
+    for (let k = 0; k < need; k++) {
+      const j = (rand() * len) | 0;
+      len--;
+      const tmp = work[j];
+      work[j] = work[len];
+      work[len] = tmp;
+      runout.push(tmp);
+    }
+
+    const heroScore = evaluateInts([...heroBase, ...runout]).score;
+    let best = -1;
+    const oppScores: number[] = [];
+    for (const h of hands) {
+      const s = evaluateInts([h[0], h[1], ...board, ...runout]).score;
+      oppScores.push(s);
+      if (s > best) best = s;
+    }
+
+    if (heroScore > best) {
+      win++;
+      equitySum += 1;
+    } else if (heroScore < best) {
+      lose++;
+    } else {
+      const tied = oppScores.filter((s) => s === heroScore).length;
+      tie++;
+      equitySum += 1 / (tied + 1);
+    }
+  }
+
+  return mcResult(win, tie, lose, equitySum);
+}
+
+/**
  * Equity of a hero range vs a villain range on a (partial) board.
  * Each trial samples one combo from each range (rejecting card clashes),
  * deals the runout, and compares. Powers the free-form equity calculator.

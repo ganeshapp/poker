@@ -188,6 +188,17 @@ export function AboutView() {
               </span>
             </li>
             <li className="flex gap-2">
+              <Icon name="info" size={15} className="mt-0.5 shrink-0 text-info" />
+              <span>
+                <span className="font-semibold text-[var(--text)]">Verdicts grade against the
+                player in front of you</span>, not against a perfect opponent — so the answer can
+                differ from "correct play", most sharply against the extremes: a Calling Station you
+                should value-bet wider and never bluff, a Nit whose raises you should believe. The
+                coach also counts your outs the way you would at a table, and says when a draw is to
+                the losing end of a hand.
+              </span>
+            </li>
+            <li className="flex gap-2">
               <Icon name="check" size={15} className="mt-0.5 shrink-0 text-good" />
               <span>
                 <span className="font-semibold text-[var(--text)]">Push/fold drills</span> use Nash
