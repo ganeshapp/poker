@@ -108,13 +108,43 @@ export interface Player {
   acted: boolean;
   position: Position;
   lastAction: PlayerLastAction | null;
-  /** Observed live stats (for the HUD). */
+  /**
+   * Observed live stats — what anyone at the table could have watched.
+   * Session-scoped: a new table knows nothing about you, the same way five
+   * strangers would not. Tracked for EVERY seat, the hero included, because
+   * the opponents have to be able to read you too.
+   */
   handsSeen: number;
   vpipCount: number;
   pfrCount: number;
+  /** Pre-flop re-raises, and the chances they had to make one. */
+  threeBetCount: number;
+  threeBetOpp: number;
+  /** Folds to an open raise, and the times they faced one. */
+  foldToRaiseCount: number;
+  faceRaiseCount: number;
+  /** Folds to a re-raise, and the times they faced one. */
+  foldTo3BetCount: number;
+  face3BetCount: number;
+  /** Continuation bets as the pre-flop raiser. */
+  cbetCount: number;
+  cbetOpp: number;
+  /** Folds to a flop continuation bet. */
+  foldToCbetCount: number;
+  faceCbetCount: number;
+  /** Post-flop bets and raises, over all post-flop actions. */
+  postAggroCount: number;
+  postActionCount: number;
+  /** Flops seen, and showdowns reached. */
+  sawFlopCount: number;
+  showdownCount: number;
+  /** Hands they actually turned over — the strongest read there is. */
+  shownHands: HandLabel[];
   /** Transient per-hand flags backing the observed counters. */
   vpipThisHand?: boolean;
   pfrThisHand?: boolean;
+  sawFlopThisHand?: boolean;
+  cbetChanceThisHand?: boolean;
   /** Per-session jitter of behavioural knobs, so the archetype label
       isn't a full spoiler. */
   dials?: { aggression: number; stickiness: number; cbetFlop: number };
@@ -175,6 +205,9 @@ export interface GameConfig {
   /** Optional ante posted by every player each hand (chips). */
   ante?: number;
 
+  /** How hard the table reads and plays back at you. Default "regular". */
+  difficulty?: "casual" | "regular" | "tough";
+
   /**
    * What happens to a bot that runs out of chips. `true` (the default) tops
    * it back up so the table always has the same number of players; `false`
@@ -222,6 +255,8 @@ export interface GameState {
   logSeq: number;
   /** Per-bot perceived holding range (labels) for the Peek feature. */
   botRanges: Record<number, HandLabel[]>;
+  /** Who raised last pre-flop — the seat a continuation bet belongs to. */
+  aggressorPreflop: number | null;
   stacksAtStart: number[];
   summary: HandSummary | null;
 }

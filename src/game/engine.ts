@@ -15,6 +15,7 @@ import type {
 } from "../types/poker.ts";
 import { makeDeck, shuffle } from "../engine/cards.ts";
 import { evaluateCards } from "../engine/evaluator.ts";
+import { cardsToLabel } from "../engine/notation.ts";
 import { archetypeForSeat, botNameFor } from "./archetypes.ts";
 
 /* ==================================================================
@@ -72,6 +73,7 @@ function clone(s: GameState): GameState {
     deck: [...s.deck],
     log: [...s.log],
     botRanges: { ...s.botRanges },
+    aggressorPreflop: s.aggressorPreflop,
     stacksAtStart: [...s.stacksAtStart],
     summary: s.summary ? { ...s.summary } : null,
   };
@@ -108,6 +110,21 @@ export function createTable(config: GameConfig): GameState {
       handsSeen: 0,
       vpipCount: 0,
       pfrCount: 0,
+      threeBetCount: 0,
+      threeBetOpp: 0,
+      foldToRaiseCount: 0,
+      faceRaiseCount: 0,
+      foldTo3BetCount: 0,
+      face3BetCount: 0,
+      cbetCount: 0,
+      cbetOpp: 0,
+      foldToCbetCount: 0,
+      faceCbetCount: 0,
+      postAggroCount: 0,
+      postActionCount: 0,
+      sawFlopCount: 0,
+      showdownCount: 0,
+      shownHands: [],
       sittingOut: false,
     });
   }
@@ -130,6 +147,7 @@ export function createTable(config: GameConfig): GameState {
     log: [],
     logSeq: 1,
     botRanges: {},
+    aggressorPreflop: null,
     stacksAtStart: players.map((p) => p.stack),
     summary: null,
   };
@@ -204,6 +222,8 @@ export function startHand(prev: GameState): GameState {
     p.foldedStreet = undefined;
     p.vpipThisHand = false;
     p.pfrThisHand = false;
+    p.sawFlopThisHand = false;
+    p.cbetChanceThisHand = false;
     p.isAllIn = false;
     p.committed = 0;
     p.committedTotal = 0;
@@ -221,6 +241,7 @@ export function startHand(prev: GameState): GameState {
   s.street = "preflop";
   s.phase = "betting";
   s.botRanges = {};
+  s.aggressorPreflop = null;
   assignPositions(s);
 
   s.deck = shuffle(makeDeck());
@@ -323,12 +344,59 @@ export function legalActions(s: GameState): LegalActions {
   };
 }
 
+/**
+ * Record the action the way a player at the table would see it.
+ *
+ * Only facts anyone could observe: the price someone faced and what they did
+ * about it. No hole cards — those are only recorded at showdown, where they
+ * are genuinely public.
+ */
+function observeBefore(s: GameState, p: Player, action: Action, toCall: number) {
+  const facing = toCall > 0;
+  if (s.street === "preflop") {
+    // Facing a raise, or a re-raise?
+    if (facing && s.currentBet > s.bigBlind) {
+      const isReraise = s.currentBet > s.bigBlind * 4.5;
+      if (isReraise) {
+        p.face3BetCount += 1;
+        if (action.type === "fold") p.foldTo3BetCount += 1;
+      } else {
+        p.faceRaiseCount += 1;
+        if (action.type === "fold") p.foldToRaiseCount += 1;
+      }
+      p.threeBetOpp += 1;
+      if (action.type === "raise" || action.type === "bet") p.threeBetCount += 1;
+    }
+    return;
+  }
+
+  p.postActionCount += 1;
+  if (action.type === "bet" || action.type === "raise") p.postAggroCount += 1;
+
+  if (s.street === "flop") {
+    // Did the pre-flop raiser follow up? And did anyone fold to it?
+    if (!facing && s.aggressorPreflop === p.id && !p.cbetChanceThisHand) {
+      p.cbetChanceThisHand = true;
+      p.cbetOpp += 1;
+      if (action.type === "bet") p.cbetCount += 1;
+    }
+    if (facing && s.aggressorPreflop != null && s.aggressorPreflop !== p.id && s.aggressor === s.aggressorPreflop) {
+      p.faceCbetCount += 1;
+      if (action.type === "fold") p.foldToCbetCount += 1;
+    }
+  }
+}
+
 export function applyAction(prev: GameState, seat: number, action: Action): GameState {
   const s = clone(prev);
   if (s.phase !== "betting" || s.toAct !== seat) return s;
   const p = s.players[seat];
   const toCall = s.currentBet - p.committed;
   const maxTotal = p.committed + p.stack;
+
+  // What anyone watching this seat would have noted, before the action is
+  // applied. Opponents read you from exactly this and nothing else.
+  observeBefore(s, p, action, toCall);
 
   switch (action.type) {
     case "fold": {
@@ -368,6 +436,7 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
       s.currentBet = to;
       s.lastRaiseSize = to;
       s.aggressor = seat;
+      if (s.street === "preflop") s.aggressorPreflop = seat;
       resetActedExcept(s, seat);
       p.acted = true;
       p.lastAction = { label: p.isAllIn ? "All-In" : "Bet", street: s.street };
@@ -390,6 +459,7 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
         resetActedExcept(s, seat);
       }
       s.aggressor = seat;
+      if (s.street === "preflop") s.aggressorPreflop = seat;
       p.acted = true;
       p.lastAction = { label: p.isAllIn ? "All-In" : "Raise", street: s.street };
       pushLog(s, s.street, `${p.name} raises to ${to}${p.isAllIn ? " (all-in)" : ""}`, "action");
@@ -430,6 +500,14 @@ function closeStreet(s: GameState) {
   if (s.street === "preflop") {
     burnDeal(s, 3);
     s.street = "flop";
+    // Everyone still in has now seen a flop — the denominator for how often
+    // a player goes on to show a hand down.
+    for (const p of s.players) {
+      if (!p.hasFolded && !p.sittingOut && !p.sawFlopThisHand) {
+        p.sawFlopThisHand = true;
+        p.sawFlopCount += 1;
+      }
+    }
   } else if (s.street === "flop") {
     burnDeal(s, 1);
     s.street = "turn";
@@ -613,6 +691,17 @@ function settleShowdown(s: GameState) {
       potLabel: pots.length > 1 ? (idx === 0 ? "Main pot" : `Side pot ${idx}`) : "Pot",
     });
   });
+
+  // Cards shown at showdown are public knowledge, and the strongest read
+  // anyone gets. Every seat remembers them for the rest of the session.
+  for (const id of liveIds) {
+    const q = s.players[id];
+    q.showdownCount += 1;
+    if (q.hole) {
+      q.shownHands.push(cardsToLabel(q.hole[0], q.hole[1]));
+      if (q.shownHands.length > 40) q.shownHands.shift();
+    }
+  }
 
   const showdown: ShowdownEntry[] = liveIds.map((id) => ({
     playerId: id,

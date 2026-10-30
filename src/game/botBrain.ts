@@ -1,11 +1,13 @@
-import type { Action, Archetype, Card, GameState, HandLabel } from "../types/poker.ts";
+import type { Action, Archetype, Card, GameState, HandLabel, Position } from "../types/poker.ts";
 import { legalActions } from "./engine.ts";
 import { ARCHETYPES } from "./archetypes.ts";
 import { allLabels, cardsToLabel, labelToCombos } from "../engine/notation.ts";
-import { equityVsRandom, equityVsRange, comboToInts, hashSeed } from "../engine/equity.ts";
+import { equityVsRandom, equityVsRange, equityVsRanges, comboToInts, hashSeed } from "../engine/equity.ts";
 import { evaluateInts } from "../engine/evaluator.ts";
 import { cardToInt } from "../engine/cards.ts";
 import { PREFLOP_100 } from "../data/preflop.ts";
+import { adjustmentFor, exploreRate, inferredPreflopRange, readPlayer, type Adjustment } from "./profile.ts";
+import { topPercentRange, chartWidth, strengthRankMap, positionMultiplier } from "../engine/ranges.ts";
 
 /* ==================================================================
    Bot decision policy.
@@ -82,12 +84,189 @@ export function decideBot(s: GameState, seat: number): BotDecision {
   return d;
 }
 
+/**
+ * The hands an opponent is likely holding right now.
+ *
+ * A bot that has been acting has a stored range (it narrows its own as it
+ * plays). Anybody else — the hero above all — gets a range inferred from what
+ * they have actually been doing this session. Before this existed the bots
+ * measured every post-flop decision against RANDOM cards, which makes bottom
+ * pair look like a 70% favourite and is why they could never fold.
+ */
+/**
+ * Narrowing a hundred-odd labels against a board costs a Monte-Carlo run per
+ * label, and every bot asks about every opponent on every decision — the same
+ * question, with the same answer, several times per betting round. Cache it
+ * for as long as the answer cannot have changed: same hand, same board, same
+ * last thing that player did.
+ */
+const RANGE_MEMO = new Map<string, HandLabel[]>();
+let RANGE_MEMO_HAND = -1;
+
+function opponentRange(s: GameState, q: GameState["players"][number]): HandLabel[] {
+  const stored = s.botRanges[q.id];
+  if (stored && stored.length) return stored;
+  const raisedPre = q.pfrThisHand === true;
+  const action = raisedPre ? (s.aggressorPreflop === q.id ? "open" : "threebet") : "call";
+  if (s.board.length === 0) return inferredPreflopRange(q, q.position, action);
+
+  if (RANGE_MEMO_HAND !== s.handNumber) {
+    RANGE_MEMO.clear();
+    RANGE_MEMO_HAND = s.handNumber;
+  }
+  // What they have done on THIS board matters more than what they play in
+  // general: somebody who plays every hand but only bets good ones has a
+  // wide pre-flop range and a narrow betting range, and it is the betting
+  // range you are up against.
+  const label = q.lastAction?.label;
+  const kind: "aggro" | "call" | "check" =
+    label === "Bet" || label === "Raise" || label === "All-In"
+      ? "aggro"
+      : label === "Call"
+        ? "call"
+        : "check";
+  const key = `${q.id}|${s.board.join("")}|${action}|${kind}|${q.handsSeen}`;
+  const hit = RANGE_MEMO.get(key);
+  if (hit) return hit;
+  const out = narrowRange(inferredPreflopRange(q, q.position, action), s.board, kind, null);
+  RANGE_MEMO.set(key, out);
+  return out;
+}
+
+/**
+ * The hands an archetype actually plays from a seat.
+ *
+ * The archetype table advertises a VPIP and a PFR. Those numbers used to be
+ * decorative: play came from multipliers on the baseline chart, which
+ * compressed all four archetypes into roughly the same tight player — a
+ * "calling station" that folded 79% of its hands, and a table where only a
+ * quarter of hands saw a flop. That is the real reason a loose player could
+ * farm this table: three hands in four were being handed over before the flop.
+ *
+ * So the advertised numbers are the contract now. The chart still decides the
+ * SHAPE — which hands are worth playing, in what order — and the archetype
+ * decides the WIDTH. A Nit and a Station playing from the cutoff want the same
+ * hands at the top; they disagree about where to stop.
+ */
+const RANGE_CACHE = new Map<string, { open: Set<HandLabel>; play: Set<HandLabel> }>();
+
+const ALL_POSITIONS: Position[] = ["UTG", "MP", "CO", "BTN", "SB", "BB"];
+const MEAN_POS_MULT =
+  ALL_POSITIONS.reduce((a, p) => a + positionMultiplier(p), 0) / ALL_POSITIONS.length;
+
+function combosFor(label: HandLabel): number {
+  return label.length === 2 ? 6 : label.endsWith("s") ? 4 : 12;
+}
+
+function rangesFor(archetype: Archetype, pos: Position): { open: Set<HandLabel>; play: Set<HandLabel> } {
+  const key = `${archetype}|${pos}`;
+  const hit = RANGE_CACHE.get(key);
+  if (hit) return hit;
+
+  const cfg = ARCHETYPES[archetype];
+  // The positional multipliers average 0.86, not 1, so using them raw shaves
+  // a seventh off every advertised number. Normalise so the advertised VPIP is
+  // what the archetype plays ACROSS the orbit, with position spreading it.
+  const mult = positionMultiplier(pos) / MEAN_POS_MULT;
+  // The charts are written for a solid player, so the TAG's advertised PFR is
+  // the scale factor of 1: every other archetype opens that much wider or
+  // tighter. Position comes from the chart itself, which already knows that
+  // the button opens more than under the gun.
+  const chart = PREFLOP_100.rfi[pos] ?? PREFLOP_100.rfi.SB;
+  // chartWidth is a fraction of all 1326 combos, not a percentage.
+  //
+  // The chart is a RAISE-FIRST-IN range — conditional on nobody having opened
+  // yet — while the archetype's advertised PFR is over every hand dealt. They
+  // are not the same quantity and must not be compared: capping the chart by
+  // `pfr * mult` was doing exactly that, and it quietly tightened the TAG
+  // below its own baseline chart. So the chart sets the opening width and the
+  // archetype only scales it by how much more or less it likes to raise.
+  const openPct = Math.max(
+    2,
+    Math.min(70, chartWidth(chart) * 100 * (cfg.pfr / ARCHETYPES.TAG.pfr)),
+  );
+  const playPct = Math.max(openPct, Math.min(85, cfg.vpip * mult));
+
+  // Candidates: chart hands first, strongest-and-most-often-opened first,
+  // then everything else by raw strength once the chart runs out.
+  const strength = strengthRankMap();
+  const rank = (l: HandLabel) => strength.get(l) ?? 999;
+  const inChart = Object.entries(chart).filter(([, f]) => f > 0);
+  inChart.sort((a, b) => b[1] - a[1] || rank(a[0]) - rank(b[0]));
+  const seen = new Set(inChart.map(([l]) => l));
+  const rest = [...strength.keys()].filter((l) => !seen.has(l)).sort((a, b) => rank(a) - rank(b));
+  const order: HandLabel[] = [...inChart.map(([l]) => l as HandLabel), ...rest];
+
+  const open = new Set<HandLabel>();
+  const play = new Set<HandLabel>();
+  let acc = 0;
+  for (const l of order) {
+    const pct = (acc / 1326) * 100;
+    if (pct >= playPct) break;
+    if (pct < openPct) open.add(l);
+    play.add(l);
+    acc += combosFor(l);
+  }
+  for (const l of PREMIUM) {
+    open.add(l);
+    play.add(l);
+  }
+
+  const out = { open, play };
+  RANGE_CACHE.set(key, out);
+  return out;
+}
+
+/**
+ * How wide to defend once the chart has run out of hands.
+ *
+ * A standard defend is roughly the top fifth of hands; against somebody
+ * opening most of theirs it has to stretch a long way past that, and the
+ * blinds stretch furthest because they are the ones being robbed.
+ */
+const DEFEND_CACHE = new Map<string, Set<HandLabel>>();
+function defendRangeFor(defendMult: number, pos: GameState["players"][number]["position"]): Set<HandLabel> {
+  const seat = pos === "BB" ? 1.35 : pos === "SB" ? 1.1 : pos === "BTN" ? 1.15 : 0.85;
+  const pct = Math.max(12, Math.min(62, 18 * defendMult * seat));
+  const key = `${Math.round(pct)}`;
+  let r = DEFEND_CACHE.get(key);
+  if (!r) {
+    r = topPercentRange(Number(key));
+    DEFEND_CACHE.set(key, r);
+  }
+  return r;
+}
+
 function decideBotInner(s: GameState, seat: number): BotDecision {
   const p = s.players[seat];
   if (!p.archetype || !p.hole) return { action: { type: "fold" }, range: [] };
   // Per-session jittered dials keep the archetype label from being a
   // full spoiler: two Nits won't play identically.
-  const cfg = { ...ARCHETYPES[p.archetype], ...(p.dials ?? {}) };
+  const base = { ...ARCHETYPES[p.archetype], ...(p.dials ?? {}) };
+  // …and on top of that, what this bot has made of whoever it is up against.
+  // Each archetype leans in its own direction; none of them becomes the same
+  // player, and none of them remembers any of it next session.
+  const villain =
+    s.aggressor != null && s.aggressor !== seat
+      ? s.players[s.aggressor]
+      : s.players.find((q) => !q.hasFolded && q.id !== seat);
+  const difficulty = s.config.difficulty ?? "regular";
+  let adj: Adjustment = villain
+    ? adjustmentFor(p.archetype, villain, difficulty)
+    : { aggression: 1, stickiness: 1, defend: 1, threebet: 1, note: null };
+  // …and every so often it throws the read away for one hand and plays
+  // straight, to find out whether the read is still true. Acting on a read
+  // 100% of the time makes a bot's behaviour a function of yours, which is
+  // its own kind of tell — and it means a stale read never gets corrected.
+  // The draw happens here, before any other, so the mobile port can match it.
+  if (villain && Math.random() < exploreRate(readPlayer(villain), difficulty)) {
+    adj = { aggression: 1, stickiness: 1, defend: 1, threebet: 1, note: adj.note };
+  }
+  const cfg = {
+    ...base,
+    aggression: Math.min(0.98, base.aggression * adj.aggression),
+    stickiness: Math.min(0.95, base.stickiness * adj.stickiness),
+  };
   const la = legalActions(s);
   const label = cardsToLabel(p.hole[0], p.hole[1]);
   const bb = s.bigBlind;
@@ -112,28 +291,26 @@ function decideBotInner(s: GameState, seat: number): BotDecision {
       }
 
       const chart = PREFLOP_100.rfi[p.position] ?? PREFLOP_100.rfi.SB;
-      const base = chart[label] ?? 0;
-      // Deviations trim the BOTTOM of the range, never the top:
-      // premiums always open; Nit/Station kill marginal opens, LAG
-      // rounds its mixed opens up.
-      let openFreq: number;
-      if (PREMIUM.has(label)) openFreq = 1;
-      else if (base === 0) openFreq = 0;
-      else if (cfg.archetype === "LAG") openFreq = Math.max(base * dial.open, 0.9);
-      else if (cfg.archetype === "Nit") openFreq = base >= 1 ? 0.92 : base * 0.35;
-      else if (cfg.archetype === "Station") openFreq = base >= 1 ? 0.55 : base * 0.25;
-      else openFreq = base;
-      openFreq = Math.min(1, openFreq);
-      if (rnd < openFreq) {
-        const limpers = s.players.filter(
-          (q) => !q.hasFolded && q.committed === bb && q.position !== "BB",
-        ).length;
-        const to = clampInt((2.5 + limpers) * bb, la.minRaiseTo, la.maxRaiseTo);
-        return { action: betOrRaise(s, to), range: chartLabels(chart, 0.4) };
+      const own = rangesFor(cfg.archetype, p.position);
+      // Open the hands this archetype opens. A mixed-frequency hand in the
+      // chart stays mixed, so two Nits in the same seat still differ.
+      if (own.open.has(label)) {
+        const mixed = chart[label];
+        const openFreq = PREMIUM.has(label) ? 1 : mixed !== undefined && mixed < 1 ? Math.max(0.5, mixed) : 1;
+        if (rnd < openFreq) {
+          const limpers = s.players.filter(
+            (q) => !q.hasFolded && q.committed === bb && q.position !== "BB",
+          ).length;
+          const to = clampInt((2.5 + limpers) * bb, la.minRaiseTo, la.maxRaiseTo);
+          return { action: betOrRaise(s, to), range: [...own.open] };
+        }
       }
-      // Loose types limp playable hands when the price is a limp.
-      if (dial.limpWide && la.canCall && la.callAmount <= bb && base > 0) {
-        return { action: { type: "call", amount: la.callAmount }, range: chartLabels(chart, 0.01) };
+      // Everything between the opening range and the playing range: the
+      // passive types limp it, the aggressive ones throw it away. This gap is
+      // what makes a Station a station — it is in the hand, cheaply, with
+      // something it should not have.
+      if (own.play.has(label) && la.canCall && la.callAmount <= bb && dial.limpWide) {
+        return { action: { type: "call", amount: la.callAmount }, range: [...own.play] };
       }
       return { action: { type: "fold" }, range: [] };
     }
@@ -156,6 +333,19 @@ function decideBotInner(s: GameState, seat: number): BotDecision {
         f3 = Math.min(1, f3 * dial.threebet);
         fc = Math.min(1 - f3, fc * dial.call);
       }
+      // A chart that has never heard of this hand is no reason to fold it when
+      // the archetype plays it anyway. This is where most of a loose player's
+      // VPIP actually comes from: not opening pots, but refusing to pass on
+      // one somebody else opened.
+      const ownPre = rangesFor(cfg.archetype, p.position);
+      if (ownPre.play.has(label) && la.callAmount <= 4.5 * bb) {
+        fc = Math.max(fc, base.stickiness * 0.9);
+      }
+      // The chart is written for somebody opening a sane range. Against a
+      // player who has been raising every other hand, folding to it is the
+      // mistake — so defend and play back harder the more they do it.
+      f3 = Math.min(1, f3 * adj.threebet);
+      fc = Math.min(1 - f3, fc * adj.defend);
       if (PREMIUM.has(label)) f3 = Math.max(f3, 0.85); // premiums stay aggressive
       if (rnd < f3 && la.canRaise) {
         const to = clampInt(s.currentBet * 3.2, la.minRaiseTo, la.maxRaiseTo);
@@ -168,10 +358,40 @@ function decideBotInner(s: GameState, seat: number): BotDecision {
         // Safety net: a premium may never fold preflop.
         return { action: { type: "call", amount: la.callAmount }, range: PREMIUM_LIST };
       }
+      // Defending wider cannot be done by scaling the chart: most hands sit
+      // at zero there, and zero times anything is still zero. Against an
+      // opener this loose, bring in hands the chart never contemplated —
+      // the top of what is playable, sized by how wide they actually are.
+      if (adj.defend > 1.2 && la.canCall && la.callAmount <= 6 * bb) {
+        const widened = defendRangeFor(adj.defend, p.position);
+        if (widened.has(label) && rnd < 0.55) {
+          return { action: { type: "call", amount: la.callAmount }, range: [...widened] };
+        }
+      }
       return { action: { type: "fold" }, range: [] };
     }
 
     // ---- Facing a 3-bet or bigger (or an uncharted spot) ----
+    // Half the position pairs have no chart, because they cannot arise in a
+    // pot nobody limped. Now that the loose archetypes limp properly, they
+    // arise all the time — so a single raise in an uncharted spot is played
+    // from the archetype's own range rather than falling through to the
+    // fold-everything-but-aces branch below.
+    // Premiums are deliberately excluded: they have their own ladder below,
+    // which 4-bets them. Letting this branch answer for them turns AA facing
+    // a raise into a flat call.
+    if (!facing3bet && !charts && !PREMIUM.has(label)) {
+      const own = rangesFor(cfg.archetype, p.position);
+      if (own.open.has(label) && la.canRaise && rnd < 0.35 * (0.5 + cfg.aggression)) {
+        const to = clampInt(s.currentBet * 3.2, la.minRaiseTo, la.maxRaiseTo);
+        return { action: betOrRaise(s, to), range: [...own.open] };
+      }
+      if (own.play.has(label) && la.canCall && la.callAmount <= 4.5 * bb &&
+          rnd < 0.35 + base.stickiness * 0.6) {
+        return { action: { type: "call", amount: la.callAmount }, range: [...own.play] };
+      }
+      return { action: { type: "fold" }, range: [] };
+    }
     if (label === "AA" || label === "KK") {
       if (la.canRaise && rnd < 0.8) {
         const to = clampInt(s.currentBet * 2.6, la.minRaiseTo, la.maxRaiseTo);
@@ -189,10 +409,21 @@ function decideBotInner(s: GameState, seat: number): BotDecision {
       }
       if (la.canCall) return { action: { type: "call", amount: la.callAmount }, range: PREMIUM_LIST };
     }
-    // Speculative continues vs a 3-bet: only at a sane price, by the
-    // hand's own 3-bet-chart frequency, never with pure junk.
-    if (f3vs > 0 && la.canCall && la.callAmount <= 12 * bb && rnd < f3vs * (0.4 + cfg.stickiness)) {
+    // Speculative continues vs a 3-bet: at a sane price, by the hand's own
+    // 3-bet-chart frequency, widened by how often this particular player
+    // re-raises. Somebody 3-betting half their hands is not representing
+    // anything, and folding everything but QQ+ to them is free money.
+    if (f3vs > 0 && la.canCall && la.callAmount <= 12 * bb &&
+        rnd < f3vs * (0.4 + cfg.stickiness) * adj.defend) {
       return { action: { type: "call", amount: la.callAmount }, range: chartLabels(charts?.threebet ?? {}, 0.25) };
+    }
+    // Once the read is strong, hands that merely *call* an open are worth a
+    // call here too — that is what punishing a serial re-raiser looks like.
+    if (adj.defend > 1.25 && la.canCall && la.callAmount <= 10 * bb) {
+      const fcVs = charts?.call[label] ?? 0;
+      if (fcVs > 0 && rnd < fcVs * (adj.defend - 1)) {
+        return { action: { type: "call", amount: la.callAmount }, range: chartLabels(charts?.call ?? {}, 0.25) };
+      }
     }
     return { action: { type: "fold" }, range: [] };
   }
@@ -210,22 +441,30 @@ function decideBotInner(s: GameState, seat: number): BotDecision {
   // Equity vs the opponent's NARROWED range heads-up; vs random as the
   // multiway / no-range fallback.
   const liveOpps = s.players.filter((q) => !q.hasFolded && q.id !== seat);
-  const soleOppRange = liveOpps.length === 1 ? s.botRanges[liveOpps[0].id] : undefined;
-  let e: number;
-  if (soleOppRange && soleOppRange.length > 0) {
-    const blocked = new Set<number>([...holeInts, ...boardInts]);
+  // Equity against the hands these people are actually likely to hold. Every
+  // opponent now has a range — a bot's own narrowed one, or one inferred
+  // from how that player has been playing this session.
+  const blocked = new Set<number>([...holeInts, ...boardInts]);
+  const toCombos = (labels: HandLabel[]): [number, number][] => {
     const combos: [number, number][] = [];
-    for (const l of soleOppRange) {
+    for (const l of labels) {
       for (const [a, b] of labelToCombos(l)) {
         const ai = cardToInt(a);
         const bi = cardToInt(b);
         if (!blocked.has(ai) && !blocked.has(bi)) combos.push([ai, bi]);
       }
     }
-    e = combos.length
-      ? equityVsRange(holeInts, boardInts, combos, 260).equity
-      : equityVsRandom(holeInts, boardInts, 320).equity;
+    return combos;
+  };
+  const oppCombos = liveOpps.map((q) => toCombos(opponentRange(s, q))).filter((c) => c.length > 0);
+  let e: number;
+  if (oppCombos.length === liveOpps.length && oppCombos.length === 1) {
+    e = equityVsRange(holeInts, boardInts, oppCombos[0], 260).equity;
+  } else if (oppCombos.length === liveOpps.length && oppCombos.length > 1) {
+    e = equityVsRanges(holeInts, boardInts, oppCombos, 400).equity;
   } else {
+    // Somebody's range came back empty (fully blocked) — fall back rather
+    // than pretend to know.
     e = equityVsRandom(holeInts, boardInts, 320).equity;
   }
 
@@ -381,9 +620,14 @@ export function narrowRange(
   stored: HandLabel[],
   board: Card[],
   kind: "aggro" | "call" | "check",
-  actualLabel: HandLabel,
+  /** The holder's real hand, so a bot's own range always contains it. Pass
+      null for somebody else's range — we are not allowed to know theirs. */
+  actualLabel: HandLabel | null,
 ): HandLabel[] {
-  if (stored.length <= 8) return stored.includes(actualLabel) ? stored : [...stored, actualLabel];
+  if (stored.length <= 8) {
+    if (actualLabel == null) return stored;
+    return stored.includes(actualLabel) ? stored : [...stored, actualLabel];
+  }
   const boardInts = board.map(cardToInt);
   const blocked = new Set(boardInts);
   const isRiver = board.length === 5;

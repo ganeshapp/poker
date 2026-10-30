@@ -16,6 +16,14 @@ Built by [Gapp](https://www.gapp.in).
 - **Play (sandbox).** Sessions against four bot archetypes (TAG / LAG / Nit / Calling Station) with
   blinds, position, side pots and all-in run-outs. Step through the action manually or auto-play,
   read the VPIP/PFR HUD, and guess/peek any player's range on a 13×13 matrix.
+- **Opponents who read you back.** Each bot keeps session-scoped stats on every other seat — yours
+  included — from public facts only: the price you faced, what you did about it, and the hands you
+  turned over. It judges your post-flop decisions against the range that history implies rather
+  than against random cards, which is what used to make bottom pair look like a 70% favourite.
+  Each archetype watches a different signal and leans its own way, so they never converge into one
+  opponent, and the table forgets everything when the session ends. Every bot also ignores its own
+  read a small share of the time and just plays straight — enough to keep testing whether the read
+  still holds, and to stop its behaviour from being a readable function of yours.
 - **Inline EV Coach.** On each decision the engine runs a Monte-Carlo equity sim vs. the villain's
   perceived range — or, multiway, vs. the whole field. Clear −EV calls pause the hand; every note
   shows the step-by-step math, lets you view the assumed range, and stays reopenable.
@@ -87,7 +95,7 @@ The installers then appear at `https://github.com/ganeshapp/poker/releases/lates
 ```
 src/
   engine/        Poker math (TS): cards, evaluator, equity (+ multiway), notation, ranges, puzzles, engineClient
-  game/          Hand state machine, bots, hand-history export
+  game/          Hand state machine, bots, opponent model, hand-history export
   store/         Zustand stores: game, drills, stats, study
   db/            Persistence (SQLite via Tauri, localStorage fallback)
   components/    table, range matrix, coach, drills, study widgets, stats charts, shared UI
@@ -116,6 +124,7 @@ node --experimental-transform-types scripts/hhimport_test.ts   # PokerStars impo
 node --experimental-transform-types scripts/table_config_test.ts # heads-up / 9-max / ante invariants
 node --experimental-transform-types scripts/preflop_test.ts    # 100bb preflop chart sanity + drill coherence
 node --experimental-transform-types scripts/bot_test.ts        # bot preflop properties + open-jam exploit sim
+node --experimental-transform-types scripts/profile_test.ts    # opponent model: reads, inferred ranges, per-archetype adaptation
 
 # Rust engine:
 cargo test --manifest-path poker-core/Cargo.toml
@@ -163,8 +172,9 @@ drills · light & dark themes.
 
 | Feature | Benefit | Effort |
 |---|---|---|
-| **Adaptive bots + difficulty levels** and more archetypes | Med–High | Med–High |
-| **Live observed-stats HUD + villain notes** (stats that build as you play) | Med | Med–High |
+| **More archetypes** — four personalities currently cover six seats, so two are duplicated | Med | Low–Med |
+| **Surface the difficulty setting** — the table already takes `casual` / `regular` / `tough`; it is not in the UI yet because the three do not yet rank cleanly against a maniac (`defend` saturates) | Med | Med |
+| **A solved baseline instead of a hand-written policy** — see `docs/solver-decision.md`; the measured conclusion is on-demand turn/river subtree solving, not a bundled blueprint | High | High |
 | **Responsive / mobile** layout (or a Tauri-mobile build) | Med–High | Med–High |
 
 ## Credits
