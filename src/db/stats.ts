@@ -21,6 +21,11 @@ export interface HandRecord {
   position?: string | null;
   /** Hero saw the flop (didn't fold preflop) — v3 on. */
   sawFlop?: boolean;
+  /** Hero put money in voluntarily pre-flop — blinds alone do not count
+      (schema v5+; undefined on older rows, which are excluded from VPIP). */
+  vpip?: boolean;
+  /** Hero raised pre-flop (schema v5+; undefined on older rows). */
+  pfr?: boolean;
   /** Full serialized HHHand — makes every hand replayable after a
       restart. Persisted, but not loaded into the stats snapshot. */
   handJson?: string;
@@ -49,7 +54,7 @@ const HISTORY_CAP = 800;
 /** Replayable hands kept in the localStorage fallback (quota-bound;
     SQLite keeps every hand). */
 const LS_HANDS_CAP = 100;
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 type Backend = "sqlite" | "local";
 let backend: Backend | null = null;
@@ -99,6 +104,17 @@ async function migrate() {
       await db.execute(`ALTER TABLE hand_history ADD COLUMN source TEXT;`);
     } catch {
       /* exists */
+    }
+  }
+  if (v < 5) {
+    // v5: whether hero put money in voluntarily, and raised, before the flop
+    // — the VPIP/PFR denominators and the style label built from them.
+    for (const col of ["vpip", "pfr"]) {
+      try {
+        await db.execute(`ALTER TABLE hand_history ADD COLUMN ${col} INTEGER;`);
+      } catch {
+        /* exists */
+      }
     }
   }
   await db.execute(`PRAGMA user_version = ${SCHEMA_VERSION};`);
@@ -179,7 +195,7 @@ export async function loadStats(): Promise<StatsSnapshot> {
       big_blind: number;
     }[];
     const hist = (await db.select(
-      `SELECT n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, ts FROM hand_history WHERE source IS NULL ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
+      `SELECT n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, vpip, pfr, ts FROM hand_history WHERE source IS NULL ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
     )) as Record<string, unknown>[];
     const guesses = (await db.select(
       `SELECT accuracy, archetype, street, ts FROM range_guess ORDER BY id DESC LIMIT ${HISTORY_CAP};`,
@@ -202,6 +218,8 @@ export async function loadStats(): Promise<StatsSnapshot> {
           archetypes: JSON.parse((h.archetypes as string) || "[]"),
           position: (h.position as string) || null,
           sawFlop: h.saw_flop == null ? undefined : !!h.saw_flop,
+          vpip: h.vpip == null ? undefined : !!h.vpip,
+          pfr: h.pfr == null ? undefined : !!h.pfr,
           ts: Number(h.ts),
         })),
       guesses: guesses
@@ -253,7 +271,7 @@ export async function persistImportedHands(handJsons: string[]): Promise<number>
     try {
       for (const j of handJsons) {
         await db.execute(
-          `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, hand_json, source, ts) VALUES (0, 0, 0, 0, 0, '[]', NULL, NULL, ?, 'import', ?);`,
+          `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, vpip, pfr, hand_json, source, ts) VALUES (0, 0, 0, 0, 0, '[]', NULL, NULL, NULL, NULL, ?, 'import', ?);`,
           [j, Date.now()],
         );
       }
@@ -302,7 +320,7 @@ export async function persistHand(rec: HandRecord, netChipsDelta: number): Promi
   if (b === "sqlite") {
     try {
       await db.execute(
-        `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, hand_json, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        `INSERT INTO hand_history (n, net_bb, pot_bb, showdown, won, archetypes, position, saw_flop, vpip, pfr, hand_json, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           rec.n,
           rec.netBb,
@@ -312,6 +330,8 @@ export async function persistHand(rec: HandRecord, netChipsDelta: number): Promi
           JSON.stringify(rec.archetypes),
           rec.position ?? null,
           rec.sawFlop == null ? null : rec.sawFlop ? 1 : 0,
+          rec.vpip == null ? null : rec.vpip ? 1 : 0,
+          rec.pfr == null ? null : rec.pfr ? 1 : 0,
           rec.handJson ?? null,
           rec.ts,
         ],

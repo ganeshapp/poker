@@ -84,4 +84,68 @@ add(pin(setup({ 3: "Station" }, { 3: ["9c","8c"] }), 3, 0.50, "P3_station_utg_98
   s = applyAction(s, 3, { type: "raise", amount: 50 });
   add(pin(s, 4, 0.10, "P5d_nit_mp_A5s_vs_utg_010"));
 }
-console.log(JSON.stringify(out, null, 0));
+/* ---------------------------------------------------------------- river */
+
+/** Mirrors `_toRiver` in the Dart test: BTN opens, the bot calls, both check
+ *  the flop and turn, and optionally the hero bets the river. */
+function toRiver(arch: Archetype, hole: [Card, Card], heroBets = 0): GameState {
+  let s = setup({ 2: arch }, { 2: hole });
+  for (const seat of [3, 4, 5]) s = applyAction(s, seat, { type: "fold" });
+  s = applyAction(s, 0, { type: "raise", amount: 50 });
+  s = applyAction(s, 1, { type: "fold" });
+  s = applyAction(s, 2, { type: "call", amount: 30 });
+  for (let i = 0; i < 2; i++) {
+    s = applyAction(s, 2, { type: "check" });
+    s = applyAction(s, 0, { type: "check" });
+  }
+  if (heroBets > 0) {
+    s = applyAction(s, 2, { type: "check" });
+    s = applyAction(s, 0, { type: "bet", amount: heroBets });
+  }
+  return s;
+}
+
+const river: Record<string, unknown> = {};
+function pinRiver(s: GameState, r: number, name: string) {
+  const la = legalActions(s);
+  const saved = Math.random;
+  Math.random = () => r;
+  const d = decideBot(s, 2);
+  Math.random = saved;
+  river[name] = {
+    action: d.action,
+    rangeLen: d.range ? d.range.length : null,
+    range: d.range,
+    la,
+    pot: s.pot,
+    currentBet: s.currentBet,
+    board: s.board,
+  };
+}
+
+{
+  const s = toRiver("TAG", ["Ks", "Kd"]);
+  pinRiver(s, 0.6, "R1_tag_KK_nobet_060");
+  pinRiver(s, 0.1, "R2_tag_KK_nobet_010");
+  pinRiver(s, 0.3, "R2b_tag_KK_nobet_030");
+}
+pinRiver(toRiver("Station", ["7s", "2h"]), 0.5, "R3_station_72o_nobet_050");
+{
+  const s = toRiver("TAG", ["Ks", "Kd"], 60);
+  pinRiver(s, 0.5, "R4_tag_KK_vs_bet60_050");
+  pinRiver(s, 0.9, "R4b_tag_KK_vs_bet60_090");
+}
+pinRiver(toRiver("Nit", ["7s", "2h"], 60), 0.5, "R5_nit_72o_vs_bet60_050");
+{
+  const st = toRiver("Station", ["7s", "2h"], 60);
+  pinRiver(st, 0.5, "R5b_station_72o_vs_bet60_050");
+  pinRiver(st, 0.8, "R5c_station_72o_vs_bet60_080");
+}
+pinRiver(toRiver("Station", ["7s", "2h"], 100), 0.5, "R5d_station_72o_vs_bet100_050");
+{
+  const s = toRiver("LAG", ["7s", "2h"]);
+  pinRiver(s, 0.05, "R6_lag_72o_nobet_005");
+  pinRiver(s, 0.2, "R6b_lag_72o_nobet_020");
+}
+
+console.log(JSON.stringify({ preflop: out, river }, null, 0));

@@ -177,6 +177,10 @@ export const useGame = create<GameStore>((set, get) => {
           archetypes,
           position: nt.players[0].position,
           sawFlop: nt.players[0].foldedStreet !== "preflop",
+          // Captured per hand so Stats can report VPIP/PFR lifetime and per
+          // session, and label how the hero has been playing.
+          vpip: nt.players[0].vpipThisHand === true,
+          pfr: nt.players[0].pfrThisHand === true,
           handJson,
           ts: Date.now(),
         },

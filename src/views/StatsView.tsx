@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStats } from "@/store/statsStore";
 import { ARCHETYPES } from "@/game/archetypes";
+import { classifyStyle, STYLE_MIN_HANDS } from "@/game/profile";
 import { LineChart, MiniBars } from "@/components/stats/charts";
 import { Button, Card, ProgressBar } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
@@ -18,6 +19,36 @@ import type { HHHand } from "@/game/handHistory";
 import { fmtSigned, fmtPct } from "@/lib/format";
 import { leaksFromDecisions } from "@/lib/leaks";
 import { cx } from "@/lib/cx";
+
+/** The engine's style names are terse because the bots use them; these are
+ *  the words shown to the player. */
+const STYLE_WORDS = {
+  unknown: "—",
+  rock: "Rock",
+  nit: "Nit",
+  tight: "Tight",
+  solid: "Solid",
+  loose: "Loose",
+  maniac: "Maniac",
+  station: "Calling station",
+} as const;
+
+/**
+ * The label in the vocabulary players actually use.
+ *
+ * "Tight" and "TAG" are not the same thing — a player who sees 20% of flops
+ * and never raises is tight and *passive*, which is a different leak and
+ * deserves a different word. So the aggressive names are only used when the
+ * raising actually backs them up.
+ */
+function styleWord(style: keyof typeof STYLE_WORDS, vpip: number, pfr: number): string {
+  const raises = vpip > 0 ? pfr / vpip : 0;
+  const aggressive = raises >= 0.6;
+  if (style === "tight") return aggressive ? "TAG (tight-aggressive)" : "Tight but passive";
+  if (style === "loose") return aggressive ? "LAG (loose-aggressive)" : "Loose but passive";
+  if (style === "solid") return aggressive ? "TAG-ish (solid)" : "Solid but passive";
+  return STYLE_WORDS[style];
+}
 
 export function StatsView() {
   const handsPlayed = useStats((s) => s.handsPlayed);
@@ -291,6 +322,17 @@ export function StatsView() {
               const aggro = decisions.filter((d) => d.action === "bet" || d.action === "raise").length;
               const calls = decisions.filter((d) => d.action === "call").length;
               const af = calls > 0 ? aggro / calls : null;
+              // Only rows that actually recorded the flags count. Older rows
+              // predate them, and treating a missing value as "did not play
+              // the hand" would quietly drag every VPIP down.
+              const rated = history.filter((h) => h.vpip != null);
+              const vpip = rated.length ? rated.filter((h) => h.vpip).length / rated.length : null;
+              const pfr = rated.length ? rated.filter((h) => h.pfr).length / rated.length : null;
+              const postAggro = aggro + calls > 0 ? aggro / (aggro + calls) : 0;
+              const style =
+                vpip != null && pfr != null && rated.length >= STYLE_MIN_HANDS
+                  ? classifyStyle(vpip, pfr, postAggro)
+                  : null;
               const Row = ({ label, value, band, blurb }: { label: string; value: string; band: string; blurb: string }) => (
                 <Tooltip
                   content={
@@ -322,11 +364,74 @@ export function StatsView() {
                     blurb="When you did reach showdown, how often you won. Very high can ironically mean you only call when it's obvious — you might be folding too many winners."
                   />
                   <Row
+                    label="Hands played (VPIP)"
+                    value={vpip == null ? "—" : fmtPct(vpip)}
+                    band="20–28%"
+                    blurb="How often you put money in before the flop by choice — posting a blind does not count. Much above 30% and you are paying to see flops with hands that cannot stand a raise; much below 18% and you are folding your way out of pots you could have won."
+                  />
+                  <Row
+                    label="Raised first in (PFR)"
+                    value={pfr == null ? "—" : fmtPct(pfr)}
+                    band="16–22%"
+                    blurb="How often you raised before the flop. The gap between this and VPIP is the tell: a small gap is a player who raises or folds, a large gap is a player who limps and calls. Limping is where most money leaks."
+                  />
+                  <Row
+                    label="Your style"
+                    value={style && vpip != null && pfr != null ? styleWord(style, vpip, pfr) : "—"}
+                    band="TAG — tight and aggressive"
+                    blurb="The label these numbers add up to — and the same one the bots at your table work out about you from watching, using the very same thresholds. They play back against it."
+                  />
+                  <Row
                     label="Aggression factor (AF)"
                     value={af == null ? "—" : af.toFixed(1)}
                     band="2.0–4.0"
                     blurb="Your bets + raises divided by your calls, over coached decisions. Below ~1.5 means you call far more than you pressure — the most common beginner leak."
                   />
+                  {(() => {
+                    // Which of the player's own gears makes money. Hand
+                    // numbers restart at 1 each session, so a number that
+                    // does not continue the previous one is a new session.
+                    const sessions: (typeof rated)[] = [];
+                    for (const h of [...rated].reverse()) {
+                      const last = sessions[sessions.length - 1];
+                      if (!last || h.n <= last[last.length - 1].n) sessions.push([h]);
+                      else last.push(h);
+                    }
+                    const buckets = new Map<string, { hands: number; net: number }>();
+                    for (const s of sessions) {
+                      if (s.length < STYLE_MIN_HANDS) continue;
+                      const sv = s.filter((h) => h.vpip).length / s.length;
+                      const sp = s.filter((h) => h.pfr).length / s.length;
+                      const label = classifyStyle(sv, sp, postAggro);
+                      const b = buckets.get(label) ?? { hands: 0, net: 0 };
+                      b.hands += s.length;
+                      b.net += s.reduce((a, h) => a + h.netBb, 0);
+                      buckets.set(label, b);
+                    }
+                    const rows = [...buckets.entries()].sort((a, b) => b[1].hands - a[1].hands);
+                    if (!rows.length) return null;
+                    return (
+                      <div className="pt-3">
+                        <div className="pb-1 text-[0.7rem] font-semibold uppercase tracking-wide text-faint">
+                          Win rate by how you were playing
+                        </div>
+                        {rows.map(([label, b]) => (
+                          <div
+                            key={label}
+                            className="flex items-center justify-between border-b border-[var(--line)] py-1.5 text-[0.8rem] last:border-b-0"
+                          >
+                            <span className="text-muted">{STYLE_WORDS[label as keyof typeof STYLE_WORDS]}</span>
+                            <span className="flex items-center gap-3">
+                              <span className="text-[0.7rem] text-faint">{b.hands}h</span>
+                              <span className="mono font-semibold text-[var(--text)]">
+                                {((b.net / b.hands) * 100).toFixed(0)}/100
+                              </span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   <p className="pt-2 text-[0.7rem] leading-relaxed text-faint">
                     Small samples swing wildly — treat these as a mirror after a few hundred hands, not a
                     verdict after ten.

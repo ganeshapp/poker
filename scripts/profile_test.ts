@@ -4,6 +4,10 @@
  * archetype leans once it thinks it has somebody figured out.
  */
 import {
+  archetypeBelief,
+  bluffPolicy,
+  bluffsThisHand,
+  bluffViability,
   readPlayer,
   inferredPreflopRange,
   adjustmentFor,
@@ -11,6 +15,7 @@ import {
   NO_ADJUSTMENT,
 } from "../src/game/profile.ts";
 import type { Player } from "../src/types/poker.ts";
+import { emptyRecentStats } from "../src/types/poker.ts";
 
 let passed = 0;
 let failed = 0;
@@ -24,7 +29,7 @@ function ok(cond: boolean, msg: string) {
 
 /** A seat with every counter at zero, then whatever the test overrides. */
 function seat(over: Partial<Player> = {}): Player {
-  return {
+  const p = {
     id: 1,
     name: "Villain",
     isHero: false,
@@ -57,9 +62,39 @@ function seat(over: Partial<Player> = {}): Player {
     sawFlopCount: 0,
     showdownCount: 0,
     shownHands: [],
+    recent: emptyRecentStats(),
+    bluffAttempts: 0,
+    bluffWins: 0,
+    bluffNetBb: 0,
     sittingOut: false,
     ...over,
   } as Player;
+  // The bots read the recency window, not the lifetime counters, so a seat
+  // described by counters has to have the window to match: "everything you
+  // passed happened recently". Tests that care about the two diverging set
+  // `recent` explicitly.
+  if (over.recent === undefined) {
+    p.recent = {
+      hands: p.handsSeen,
+      vpip: p.vpipCount,
+      pfr: p.pfrCount,
+      threeBet: p.threeBetCount,
+      threeBetOpp: p.threeBetOpp,
+      foldToRaise: p.foldToRaiseCount,
+      faceRaise: p.faceRaiseCount,
+      foldTo3Bet: p.foldTo3BetCount,
+      face3Bet: p.face3BetCount,
+      foldToCbet: p.foldToCbetCount,
+      faceCbet: p.faceCbetCount,
+      cbet: p.cbetCount,
+      cbetOpp: p.cbetOpp,
+      postAggro: p.postAggroCount,
+      postAction: p.postActionCount,
+      showdown: p.showdownCount,
+      sawFlop: p.sawFlopCount,
+    };
+  }
+  return p;
 }
 
 /* ------------------------------------------------------------ readPlayer */
@@ -263,6 +298,191 @@ function seat(over: Partial<Player> = {}): Player {
     const r = exploreRate(blank, d);
     ok(r > 0 && r < 1, `${d} explore rate is a probability (${r})`);
   }
+}
+
+/* ------------------------------------------------------ recency weighting */
+
+// The whole point: a player who was tight and has loosened up reads as loose
+// NOW, not as the average of the two. A cumulative average cannot do this.
+{
+  const changedGear = seat({
+    handsSeen: 60,
+    vpipCount: 12, // tight over the session as a whole
+    pfrCount: 6,
+    recent: {
+      ...emptyRecentStats(),
+      hands: 20, vpip: 17, pfr: 12, // but wide over the last stretch
+      postAction: 10, postAggro: 7,
+    },
+  });
+  const read = readPlayer(changedGear);
+  ok(read.vpip > 0.7, `recent gear change shows up (vpip ${read.vpip.toFixed(2)})`);
+  ok(read.style === "maniac", `and re-labels them (got ${read.style})`);
+  // The lifetime counters are untouched, because Stats asks a different
+  // question than the bots do.
+  ok(changedGear.vpipCount === 12, "lifetime counters are not rewritten by the window");
+}
+
+{
+  // And the reverse: a maniac who has tightened up.
+  const settled = seat({
+    handsSeen: 60,
+    vpipCount: 55,
+    pfrCount: 40,
+    recent: { ...emptyRecentStats(), hands: 20, vpip: 3, pfr: 2 },
+  });
+  ok(readPlayer(settled).vpip < 0.2, "a player who has tightened up reads tight");
+}
+
+/* --------------------------------------------------------- archetypeBelief */
+
+{
+  const blank = archetypeBelief(seat());
+  const vals = Object.values(blank);
+  ok(vals.every((v) => Math.abs(v - 0.25) < 1e-9), "no hands watched → no opinion, 25% each");
+  ok(Math.abs(vals.reduce((a, b) => a + b, 0) - 1) < 1e-9, "belief sums to 1");
+}
+
+{
+  // Loose and passive, and it never raises: that is a station and nothing else.
+  const station = seat({
+    handsSeen: 60, vpipCount: 28, pfrCount: 4,
+    postAggroCount: 4, postActionCount: 40,
+  });
+  const b = archetypeBelief(station);
+  ok(b.Station > 0.5, `loose-passive reads mostly Station (${b.Station.toFixed(2)})`);
+  ok(b.Station > b.LAG && b.Station > b.Nit, "and beats the alternatives");
+  ok(Math.abs(Object.values(b).reduce((x, y) => x + y, 0) - 1) < 1e-9, "sums to 1");
+}
+
+{
+  const nit = seat({
+    handsSeen: 60, vpipCount: 7, pfrCount: 5,
+    postAggroCount: 12, postActionCount: 30,
+  });
+  const b = archetypeBelief(nit);
+  ok(b.Nit > b.Station && b.Nit > b.LAG, `very tight reads as a Nit (${b.Nit.toFixed(2)})`);
+}
+
+{
+  const lag = seat({
+    handsSeen: 60, vpipCount: 21, pfrCount: 17,
+    postAggroCount: 27, postActionCount: 40,
+  });
+  const b = archetypeBelief(lag);
+  ok(b.LAG + b.TAG > 0.6, `loose-aggressive reads as LAG or TAG (${b.LAG.toFixed(2)}/${b.TAG.toFixed(2)})`);
+  ok(b.Station < 0.2, "and not as a station");
+}
+
+{
+  // Opinions firm up with the sample rather than snapping on hand three.
+  const thin = archetypeBelief(seat({ handsSeen: 6, vpipCount: 3, pfrCount: 0, postActionCount: 4 }));
+  const thick = archetypeBelief(seat({ handsSeen: 120, vpipCount: 60, pfrCount: 2, postActionCount: 80 }));
+  const spread = (b: Record<string, number>) => Math.max(...Object.values(b));
+  ok(spread(thin) < spread(thick), `a bigger sample gives a sharper opinion (${spread(thin).toFixed(2)} < ${spread(thick).toFixed(2)})`);
+}
+
+/* ---------------------------------------------------------- bluffViability */
+
+{
+  const folder = seat({ handsSeen: 40, faceCbetCount: 20, foldToCbetCount: 17, vpipCount: 10, pfrCount: 7 });
+  const station = seat({ handsSeen: 40, faceCbetCount: 20, foldToCbetCount: 2, vpipCount: 20, pfrCount: 2, postActionCount: 30, postAggroCount: 3 });
+  const vFolder = bluffViability([folder]);
+  const vStation = bluffViability([station]);
+  ok(vFolder > vStation * 2, `bluffing a folder beats bluffing a station (${vFolder.toFixed(2)} vs ${vStation.toFixed(2)})`);
+  ok(bluffViability([]) === 0, "nobody left to bluff → no bluff");
+
+  // The stickiest player sets the price: one station ruins it for the field.
+  const twoFolders = bluffViability([folder, { ...folder, id: 2 }]);
+  const folderPlusStation = bluffViability([folder, { ...station, id: 2 }]);
+  ok(
+    folderPlusStation < twoFolders,
+    `one station in the field kills it (${folderPlusStation.toFixed(2)} < ${twoFolders.toFixed(2)})`,
+  );
+  // And a crowd is harder than a heads-up pot, all else equal.
+  ok(twoFolders < vFolder, "every extra body is another hand that has to miss");
+}
+
+/* ------------------------------------------------------------ bluffPolicy */
+
+{
+  const fresh = bluffPolicy(seat());
+  ok(fresh.attempts === 0, "a fresh seat has no bluff history");
+  ok(fresh.minEquity >= 0 && fresh.minEquity <= 0.32, "and demands little or nothing of a bluff hand");
+
+  // Caught over and over, and it cost real money: do it less, and stop
+  // doing it with pure air.
+  const caught = bluffPolicy(seat({ bluffAttempts: 30, bluffWins: 2, bluffNetBb: -90 }));
+  ok(caught.frequency < fresh.frequency, `getting caught lowers the rate (${caught.frequency.toFixed(2)} < ${fresh.frequency.toFixed(2)})`);
+  ok(caught.minEquity > fresh.minEquity, `and tightens the range (${caught.minEquity.toFixed(2)} > ${fresh.minEquity.toFixed(2)})`);
+
+  // Getting away with it: do it more, with anything.
+  const winning = bluffPolicy(seat({ bluffAttempts: 30, bluffWins: 26, bluffNetBb: 90 }));
+  ok(winning.frequency > fresh.frequency, `getting through raises the rate (${winning.frequency.toFixed(2)})`);
+  ok(winning.minEquity === 0, "and will bluff with any two cards");
+  ok(winning.frequency > caught.frequency * 2, "the two ends are a long way apart");
+
+  // One unlucky hand does not rewrite the policy.
+  const unlucky = bluffPolicy(seat({ bluffAttempts: 1, bluffWins: 0, bluffNetBb: -4 }));
+  ok(
+    Math.abs(unlucky.frequency - fresh.frequency) < 0.25,
+    `a single caught bluff barely moves it (${unlucky.frequency.toFixed(2)} vs ${fresh.frequency.toFixed(2)})`,
+  );
+  for (const a of [0, 1, 5, 50, 500]) {
+    for (const w of [0, 1, a]) {
+      for (const net of [-500, -5, 0, 5, 500]) {
+      const pol = bluffPolicy(seat({ bluffAttempts: a, bluffWins: Math.min(w, a), bluffNetBb: net }));
+      ok(
+        pol.frequency >= 0.3 && pol.frequency <= 1.9 && pol.minEquity >= 0 && pol.minEquity <= 0.32,
+        `policy stays in range at ${w}/${a}`,
+      );
+      }
+    }
+  }
+}
+
+// The asymmetry that the success rate alone cannot see: getting through more
+// than half the time, and still losing money doing it.
+{
+  const gettingThroughButLosing = bluffPolicy(
+    seat({ bluffAttempts: 40, bluffWins: 22, bluffNetBb: -70 }),
+  );
+  ok(
+    gettingThroughButLosing.frequency < 1,
+    `a profitable-looking success rate that loses chips still tightens ` +
+      `(${gettingThroughButLosing.frequency.toFixed(2)})`,
+  );
+  const rarelyThroughButPaying = bluffPolicy(
+    seat({ bluffAttempts: 40, bluffWins: 9, bluffNetBb: 60 }),
+  );
+  ok(
+    rarelyThroughButPaying.frequency > 1,
+    `and a low success rate that makes money does not ` +
+      `(${rarelyThroughButPaying.frequency.toFixed(2)})`,
+  );
+}
+
+/* --------------------------------------------------------- bluffsThisHand */
+
+{
+  // Stable within a hand — this is what makes a barrel rather than a stab.
+  const a = bluffsThisHand(42, 3, 0.5);
+  for (let i = 0; i < 20; i++) {
+    ok(bluffsThisHand(42, 3, 0.5) === a, "the same hand gives the same answer every street");
+  }
+  ok(bluffsThisHand(42, 3, 0) === false, "rate 0 never bluffs");
+  ok(bluffsThisHand(42, 3, 1) === true, "rate 1 always bluffs");
+
+  // Varies across hands and seats, and lands near the requested rate.
+  let hits = 0;
+  const N = 4000;
+  for (let h = 0; h < N; h++) if (bluffsThisHand(h, 2, 0.3)) hits++;
+  const got = hits / N;
+  ok(Math.abs(got - 0.3) < 0.04, `the rate is honoured over many hands (${got.toFixed(3)})`);
+
+  let differ = 0;
+  for (let h = 0; h < 200; h++) if (bluffsThisHand(h, 1, 0.5) !== bluffsThisHand(h, 2, 0.5)) differ++;
+  ok(differ > 40, `two seats in the same hand decide independently (${differ}/200)`);
 }
 
 console.log(`\nProfile tests: ${passed} passed, ${failed} failed.`);

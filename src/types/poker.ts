@@ -87,6 +87,54 @@ export interface PlayerLastAction {
   street: Street;
 }
 
+/**
+ * Recency-weighted mirrors of the observed counters below: the same events,
+ * but old hands fade out.
+ *
+ * A cumulative average is the wrong estimator for a poker opponent, because
+ * opponents are not stationary. Somebody who folds for thirty hands and then
+ * loosens up once they have chips would take another thirty hands to show up
+ * in `vpipCount / handsSeen`. These decay once per hand, so a change of gear
+ * is visible in about ten. The integer counters are kept alongside for the
+ * HUD and the Stats page, which are asking a different question: what has
+ * this player done overall, not what are they doing now.
+ */
+export interface RecentStats {
+  hands: number;
+  vpip: number;
+  pfr: number;
+  threeBet: number;
+  threeBetOpp: number;
+  foldToRaise: number;
+  faceRaise: number;
+  foldTo3Bet: number;
+  face3Bet: number;
+  foldToCbet: number;
+  faceCbet: number;
+  cbet: number;
+  cbetOpp: number;
+  postAggro: number;
+  postAction: number;
+  showdown: number;
+  sawFlop: number;
+}
+
+/** How fast the recency window forgets — ~25 hands of effective memory. */
+export const RECENT_DECAY = 0.96;
+
+export function emptyRecentStats(): RecentStats {
+  return {
+    hands: 0, vpip: 0, pfr: 0,
+    threeBet: 0, threeBetOpp: 0,
+    foldToRaise: 0, faceRaise: 0,
+    foldTo3Bet: 0, face3Bet: 0,
+    foldToCbet: 0, faceCbet: 0,
+    cbet: 0, cbetOpp: 0,
+    postAggro: 0, postAction: 0,
+    showdown: 0, sawFlop: 0,
+  };
+}
+
 export interface Player {
   id: number; // seat index 0..n-1; 0 is hero
   name: string;
@@ -140,6 +188,26 @@ export interface Player {
   showdownCount: number;
   /** Hands they actually turned over — the strongest read there is. */
   shownHands: HandLabel[];
+  /** The same events, recency-weighted. This is what the bots actually read. */
+  recent: RecentStats;
+  /**
+   * Bluffs run and bluffs that got through, this session. The bandit the bots
+   * use to decide how often — and how wide — to bluff: caught often, tighten
+   * both; getting through, loosen both.
+   */
+  bluffAttempts: number;
+  bluffWins: number;
+  /**
+   * Net big blinds won across the hands it bluffed on.
+   *
+   * The reward signal that matters. Counting how often a bluff "got through"
+   * is not enough: the ones that get through win a small pot and the ones
+   * that get called lose a big one, so a 43% success rate can still be
+   * setting money on fire.
+   */
+  bluffNetBb: number;
+  /** Set when this seat has bet as a bluff during the current hand. */
+  bluffedThisHand?: boolean;
   /** Transient per-hand flags backing the observed counters. */
   vpipThisHand?: boolean;
   pfrThisHand?: boolean;

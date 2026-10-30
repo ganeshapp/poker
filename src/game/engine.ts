@@ -13,6 +13,7 @@ import type {
   Street,
   UncalledBet,
 } from "../types/poker.ts";
+import { RECENT_DECAY, emptyRecentStats } from "../types/poker.ts";
 import { makeDeck, shuffle } from "../engine/cards.ts";
 import { evaluateCards } from "../engine/evaluator.ts";
 import { cardsToLabel } from "../engine/notation.ts";
@@ -125,6 +126,10 @@ export function createTable(config: GameConfig): GameState {
       sawFlopCount: 0,
       showdownCount: 0,
       shownHands: [],
+      recent: emptyRecentStats(),
+      bluffAttempts: 0,
+      bluffWins: 0,
+      bluffNetBb: 0,
       sittingOut: false,
     });
   }
@@ -224,6 +229,14 @@ export function startHand(prev: GameState): GameState {
     p.pfrThisHand = false;
     p.sawFlopThisHand = false;
     p.cbetChanceThisHand = false;
+    p.bluffedThisHand = false;
+    // Fade the recency window by one hand. Everything recorded during this
+    // hand then lands at full weight, so the last ten hands dominate.
+    if (!p.sittingOut) {
+      const r = p.recent;
+      for (const k of Object.keys(r) as (keyof typeof r)[]) r[k] *= RECENT_DECAY;
+      r.hands += 1;
+    }
     p.isAllIn = false;
     p.committed = 0;
     p.committedTotal = 0;
@@ -359,30 +372,54 @@ function observeBefore(s: GameState, p: Player, action: Action, toCall: number) 
       const isReraise = s.currentBet > s.bigBlind * 4.5;
       if (isReraise) {
         p.face3BetCount += 1;
-        if (action.type === "fold") p.foldTo3BetCount += 1;
+        p.recent.face3Bet += 1;
+        if (action.type === "fold") {
+          p.foldTo3BetCount += 1;
+          p.recent.foldTo3Bet += 1;
+        }
       } else {
         p.faceRaiseCount += 1;
-        if (action.type === "fold") p.foldToRaiseCount += 1;
+        p.recent.faceRaise += 1;
+        if (action.type === "fold") {
+          p.foldToRaiseCount += 1;
+          p.recent.foldToRaise += 1;
+        }
       }
       p.threeBetOpp += 1;
-      if (action.type === "raise" || action.type === "bet") p.threeBetCount += 1;
+      p.recent.threeBetOpp += 1;
+      if (action.type === "raise" || action.type === "bet") {
+        p.threeBetCount += 1;
+        p.recent.threeBet += 1;
+      }
     }
     return;
   }
 
   p.postActionCount += 1;
-  if (action.type === "bet" || action.type === "raise") p.postAggroCount += 1;
+  p.recent.postAction += 1;
+  if (action.type === "bet" || action.type === "raise") {
+    p.postAggroCount += 1;
+    p.recent.postAggro += 1;
+  }
 
   if (s.street === "flop") {
     // Did the pre-flop raiser follow up? And did anyone fold to it?
     if (!facing && s.aggressorPreflop === p.id && !p.cbetChanceThisHand) {
       p.cbetChanceThisHand = true;
       p.cbetOpp += 1;
-      if (action.type === "bet") p.cbetCount += 1;
+      p.recent.cbetOpp += 1;
+      if (action.type === "bet") {
+        p.cbetCount += 1;
+        p.recent.cbet += 1;
+      }
     }
     if (facing && s.aggressorPreflop != null && s.aggressorPreflop !== p.id && s.aggressor === s.aggressorPreflop) {
       p.faceCbetCount += 1;
-      if (action.type === "fold") p.foldToCbetCount += 1;
+      p.recent.faceCbet += 1;
+      if (action.type === "fold") {
+        p.foldToCbetCount += 1;
+        p.recent.foldToCbet += 1;
+      }
     }
   }
 }
@@ -417,6 +454,7 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
       if (s.street === "preflop" && !p.vpipThisHand) {
         p.vpipThisHand = true;
         p.vpipCount += 1;
+        p.recent.vpip += 1;
       }
       const amt = Math.min(toCall, p.stack);
       commit(s, p, amt);
@@ -427,8 +465,8 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
     }
     case "bet": {
       if (s.street === "preflop") {
-        if (!p.vpipThisHand) { p.vpipThisHand = true; p.vpipCount += 1; }
-        if (!p.pfrThisHand) { p.pfrThisHand = true; p.pfrCount += 1; }
+        if (!p.vpipThisHand) { p.vpipThisHand = true; p.vpipCount += 1; p.recent.vpip += 1; }
+        if (!p.pfrThisHand) { p.pfrThisHand = true; p.pfrCount += 1; p.recent.pfr += 1; }
       }
       let to = Math.max(action.amount ?? 0, Math.min(s.bigBlind, maxTotal));
       to = Math.min(to, maxTotal);
@@ -445,8 +483,8 @@ export function applyAction(prev: GameState, seat: number, action: Action): Game
     }
     case "raise": {
       if (s.street === "preflop") {
-        if (!p.vpipThisHand) { p.vpipThisHand = true; p.vpipCount += 1; }
-        if (!p.pfrThisHand) { p.pfrThisHand = true; p.pfrCount += 1; }
+        if (!p.vpipThisHand) { p.vpipThisHand = true; p.vpipCount += 1; p.recent.vpip += 1; }
+        if (!p.pfrThisHand) { p.pfrThisHand = true; p.pfrCount += 1; p.recent.pfr += 1; }
       }
       let to = action.amount ?? s.currentBet + s.lastRaiseSize;
       to = Math.min(to, maxTotal);
@@ -506,6 +544,7 @@ function closeStreet(s: GameState) {
       if (!p.hasFolded && !p.sittingOut && !p.sawFlopThisHand) {
         p.sawFlopThisHand = true;
         p.sawFlopCount += 1;
+        p.recent.sawFlop += 1;
       }
     }
   } else if (s.street === "flop") {
@@ -630,11 +669,32 @@ function settleByFold(s: GameState, winnerId: number) {
     heroNetChips: s.players[0].stack - s.stacksAtStart[0],
     uncalled: excess > 0 ? { playerId: winnerId, amount: excess, inPot: true } : undefined,
   };
+  scoreBluffs(s, winnerId);
   pushLog(s, s.street, `${w.name} wins ${amount} (uncontested)`, "result");
   // Learning reveal: at hand end every dealt hand is shown, folds included.
   for (const p of s.players) if (p.hole) p.revealed = true;
   s.toAct = null;
   s.phase = "hand-over";
+}
+
+/**
+ * Score every bluff that was run this hand — the reward signal the bluffing
+ * bandit learns from.
+ *
+ * A bluff "got through" if the bluffer took the pot without anybody seeing a
+ * showdown. Anything else counts against it: called down, raised off it, or
+ * shown up at the end. Crude, in the sense that a bluff can get through and
+ * still have been a bad idea, but it is the same evidence a human has.
+ */
+function scoreBluffs(s: GameState, wonUncontestedBy: number | null) {
+  for (const p of s.players) {
+    if (!p.bluffedThisHand) continue;
+    p.bluffAttempts += 1;
+    if (p.id === wonUncontestedBy) p.bluffWins += 1;
+    // What it actually cost or made, which is the signal the policy uses.
+    p.bluffNetBb += (p.stack - s.stacksAtStart[p.id]) / s.bigBlind;
+    p.bluffedThisHand = false;
+  }
 }
 
 function settleShowdown(s: GameState) {
@@ -694,9 +754,13 @@ function settleShowdown(s: GameState) {
 
   // Cards shown at showdown are public knowledge, and the strongest read
   // anyone gets. Every seat remembers them for the rest of the session.
+  // A hand that reaches showdown is, by definition, a bluff that did not
+  // get through: somebody paid to see it.
+  scoreBluffs(s, null);
   for (const id of liveIds) {
     const q = s.players[id];
     q.showdownCount += 1;
+    q.recent.showdown += 1;
     if (q.hole) {
       q.shownHands.push(cardsToLabel(q.hole[0], q.hole[1]));
       if (q.shownHands.length > 40) q.shownHands.shift();
