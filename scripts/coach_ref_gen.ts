@@ -12,6 +12,7 @@
  * coach to drift (there used to be: `src/store/_gameStore_patched.ts`).
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createTable, startHand } from "../src/game/engine.ts";
 import { evaluateHero, villainRangeFor, firstOpponentInHand, scoreGuess } from "../src/game/coach.ts";
 import type { EquityEngine } from "../src/game/coach.ts";
@@ -171,4 +172,14 @@ writeFileSync(
 const Map<String, Object?> kCoachRef = ${dart({ scenarios, ...extras })};
 `,
 );
+// The mobile repo's CI gate is `dart format --set-exit-if-changed lib test`,
+// and this file lands in `test/`. Emitting it unformatted turns that gate red
+// on the next push, so format it here rather than leaving it to whoever
+// notices — generated code still has to satisfy the same gates as hand-written
+// code.
+try {
+  execFileSync("dart", ["format", OUT], { stdio: "inherit" });
+} catch {
+  console.warn(`could not run \`dart format ${OUT}\` — format it before committing`);
+}
 console.log(`wrote ${OUT} (${Object.keys(scenarios).length} scenarios)`);
