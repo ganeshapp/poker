@@ -656,6 +656,11 @@ export function narrowRange(
     // Checking sheds the very strongest slice, keeps the rest.
     kept = scored.slice(Math.round(n * 0.12)).map((x) => x.label);
   }
-  if (!kept.includes(actualLabel) && stored.includes(actualLabel)) kept.push(actualLabel);
+  // Guarded explicitly rather than relying on `includes(null)` being false:
+  // `actualLabel` is null for somebody else's range, and tsc rejects the
+  // unguarded form. The Dart port has the same guard.
+  if (actualLabel !== null && !kept.includes(actualLabel) && stored.includes(actualLabel)) {
+    kept.push(actualLabel);
+  }
   return kept;
 }
