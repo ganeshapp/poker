@@ -10,7 +10,7 @@
  * price somebody faced, what they did about it, and the hands they turned
  * over. No hole-card peeking, no omniscience.
  */
-import type { HandLabel, Player, Position } from "../types/poker.ts";
+import type { Archetype, HandLabel, Player, Position } from "../types/poker.ts";
 import { buildPreflopRanges, topPercentRange } from "../engine/ranges.ts";
 import { hashSeed } from "../engine/equity.ts";
 
