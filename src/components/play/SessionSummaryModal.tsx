@@ -92,7 +92,7 @@ export function SessionSummaryModal() {
               How you played (before how it paid)
             </div>
             <div className="text-[0.82rem] leading-relaxed text-[var(--text)]">
-              {sessionDecisions.length} coached decision{sessionDecisions.length === 1 ? "" : "s"},{" "}
+              {sessionDecisions.length} decision{sessionDecisions.length === 1 ? "" : "s"} graded,{" "}
               {sMistakes.length} flagged as mistakes
               {sessionRate != null && lifeRate != null && allDecisions.length > sessionDecisions.length && (
                 <>

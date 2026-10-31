@@ -1,6 +1,7 @@
 import type { Archetype } from "@/types/poker";
 import type { DecisionRecord } from "@/lib/leaks";
 import { isNative } from "@/engine/engineClient";
+import { preflopFlagsFromHandJson } from "@/game/handHistory";
 
 /* ==================================================================
    Persistence layer.
@@ -73,6 +74,37 @@ function noteError(context: string, e: unknown) {
   console.warn(lastError);
 }
 
+/**
+ * Fills `vpip` / `pfr` for hands played before the columns existed.
+ *
+ * Without this the Stats page shows a dash for VPIP, PFR and style no matter
+ * how many thousand hands are behind you, because every historical row is
+ * null — a new number that only starts counting today is not a statistic, it
+ * is an apology. The answer is already in `hand_json`: it holds the full
+ * action list, so what the hero did before the flop can be recovered exactly
+ * rather than estimated.
+ */
+async function backfillPreflopFlags() {
+  if (!db) return;
+  for (;;) {
+    const rows = (await db.select(
+      `SELECT id, hand_json FROM hand_history WHERE vpip IS NULL AND hand_json IS NOT NULL ORDER BY id LIMIT 500;`,
+    )) as { id: number; hand_json: string }[];
+    if (!rows.length) return;
+    for (const row of rows) {
+      const f = preflopFlagsFromHandJson(row.hand_json);
+      // A payload that will not parse is still written, as 0/0, so the WHERE
+      // clause always shrinks and this cannot spin.
+      await db.execute(`UPDATE hand_history SET vpip = ?, pfr = ? WHERE id = ?;`, [
+        f?.vpip ? 1 : 0,
+        f?.pfr ? 1 : 0,
+        row.id,
+      ]);
+    }
+    if (rows.length < 500) return;
+  }
+}
+
 async function migrate() {
   const rows = (await db.select(`PRAGMA user_version;`)) as { user_version: number }[];
   const v = rows[0]?.user_version ?? 0;
@@ -116,6 +148,7 @@ async function migrate() {
         /* exists */
       }
     }
+    await backfillPreflopFlags();
   }
   await db.execute(`PRAGMA user_version = ${SCHEMA_VERSION};`);
 }

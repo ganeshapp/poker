@@ -87,6 +87,47 @@ function actionLine(a: HHAction, streetBet: number): { line: string; newStreetBe
 }
 
 /** Globally unique, monotonic export id (session-local ids restart at 1). */
+/** What the hero did before the flop, recovered from a stored hand. */
+export interface PreflopFlags {
+  /** Put money in by choice. Posting a blind does not count, which is the
+      whole subtlety: a big blind who checks has not played the hand. */
+  vpip: boolean;
+  /** Raised before the flop. */
+  pfr: boolean;
+}
+
+/**
+ * Reads {@link PreflopFlags} back out of a `hand_json` payload.
+ *
+ * Used to backfill hands played before the columns existed, so Stats can
+ * report VPIP and PFR over a whole history instead of starting the count on
+ * the day the feature shipped. Returns null when the payload is unusable,
+ * which the caller records as "did not play" rather than leaving it null and
+ * re-scanning the row forever.
+ */
+export function preflopFlagsFromHandJson(raw: string): PreflopFlags | null {
+  try {
+    const j = JSON.parse(raw) as Partial<HHHand>;
+    const seats = j.seats;
+    const actions = j.actions;
+    if (!Array.isArray(seats) || !Array.isArray(actions)) return null;
+    // Which seat is the hero? Stored per hand, because the hero is not
+    // always seat 0 in an imported history.
+    const heroSeat = seats.find((s) => s?.isHero)?.seat ?? 0;
+    let vpip = false;
+    let pfr = false;
+    for (const a of actions) {
+      if (!a || a.street !== "preflop" || a.seat !== heroSeat) continue;
+      // `post` is the blind going in, which is not voluntary.
+      if (a.type === "call" || a.type === "bet" || a.type === "raise") vpip = true;
+      if (a.type === "bet" || a.type === "raise") pfr = true;
+    }
+    return { vpip, pfr };
+  } catch {
+    return null;
+  }
+}
+
 export function exportHandId(h: HHHand): number {
   return h.startedAt * 100 + (h.id % 100);
 }

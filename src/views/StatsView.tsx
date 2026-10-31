@@ -385,7 +385,7 @@ export function StatsView() {
                     label="Aggression factor (AF)"
                     value={af == null ? "—" : af.toFixed(1)}
                     band="2.0–4.0"
-                    blurb="Your bets + raises divided by your calls, over coached decisions. Below ~1.5 means you call far more than you pressure — the most common beginner leak."
+                    blurb="Your bets + raises divided by your calls, over every graded decision — including sessions you played with the coach switched off. Below ~1.5 means you call far more than you pressure, the most common beginner leak."
                   />
                   {(() => {
                     // Which of the player's own gears makes money. Hand

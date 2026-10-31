@@ -361,7 +361,15 @@ export const useGame = create<GameStore>((set, get) => {
       // background and pauses auto-play if the verdict is blocking.
       applyStep(0, a);
       maybeAutoLoop();
-      if (!coachEnabled) return;
+      // The coach runs even when it is switched OFF.
+      //
+      // "Off" means it does not interrupt you — not that the app stops
+      // watching. Its verdicts still feed the Aggression factor, "My leaks",
+      // the Review queue and the session summary, which is exactly where you
+      // go to learn from a session you chose to play without a coach talking
+      // over it. Skipping the evaluation meant an uncoached session produced
+      // no AF, no flagged hands and nothing to review: the session you most
+      // wanted to look back on was the one the app remembered least about.
       const st = useSettings.getState();
       const { mistakeBb, foldFlagBb } = coachThresholds(st.coachStrictness);
       const review = await evaluateHero(t, a, id, {
@@ -371,8 +379,10 @@ export const useGame = create<GameStore>((set, get) => {
       }, math);
       if (review) {
         // Stats and leaks always record; the panel (and a blocking
-        // pause) only if the verdict still belongs to the current hand.
-        if (get().table.handNumber === t.handNumber) pushReview(review);
+        // pause) only if the coach is on AND the verdict still belongs to
+        // the current hand. That gate is the whole difference between on
+        // and off.
+        if (coachEnabled && get().table.handNumber === t.handNumber) pushReview(review);
         if (review.kind === "decision") {
           useStats.getState().recordDecision({
             verdict: review.verdict,
