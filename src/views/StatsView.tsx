@@ -41,6 +41,30 @@ const STYLE_WORDS = {
  * deserves a different word. So the aggressive names are only used when the
  * raising actually backs them up.
  */
+/**
+ * What to do about the label. Not a definition — the thing a coach would
+ * actually tell you to change next.
+ */
+function styleAdvice(style: keyof typeof STYLE_WORDS): string {
+  switch (style) {
+    case "maniac":
+      return "Playing almost everything and raising a lot means your raises stop meaning anything, and good players call you down light. Pick one change: fold your worst opens from early position.";
+    case "station":
+      return "You see a lot of flops and rarely raise, so you pay to find out and win only when you hit. Raise the hands you were going to call with — the same hands win more when you are the one applying the pressure.";
+    case "loose":
+      return "Playing a lot of hands is fine if you keep raising with them and give up on later streets. It stops being fine when you call down out of position. Tighten from the first two seats and keep the rest.";
+    case "rock":
+    case "nit":
+      return "You are folding your way out of pots you could win. The blinds come round whatever you do, so a range this tight loses slowly even when every hand is played well. Open more from the button and the cutoff first.";
+    case "tight":
+      return "A good base. The next gain is positional: widen on the button and in the cutoff, where you act last and can fold cheaply when the flop misses you.";
+    case "solid":
+      return "A reasonable range played with some aggression. Look at your fold-to-continuation-bet number next — that is usually where a solid player is still leaking.";
+    default:
+      return "Not enough hands yet for the label to mean anything.";
+  }
+}
+
 function styleWord(style: keyof typeof STYLE_WORDS, vpip: number, pfr: number): string {
   const raises = vpip > 0 ? pfr / vpip : 0;
   const aggressive = raises >= 0.6;
@@ -379,7 +403,10 @@ export function StatsView() {
                     label="Your style"
                     value={style && vpip != null && pfr != null ? styleWord(style, vpip, pfr) : "—"}
                     band="TAG — tight and aggressive"
-                    blurb="The label these numbers add up to — and the same one the bots at your table work out about you from watching, using the very same thresholds. They play back against it."
+                    blurb={
+                      "The label these numbers add up to — and the same one the bots at your table work out about you from watching, using the very same thresholds. They play back against it." +
+                      (style ? ` ${styleAdvice(style)}` : "")
+                    }
                   />
                   <Row
                     label="Aggression factor (AF)"
