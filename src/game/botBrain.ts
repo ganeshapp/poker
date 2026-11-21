@@ -17,6 +17,12 @@ import {
   type Adjustment,
 } from "./profile.ts";
 import { topPercentRange, chartWidth, strengthRankMap, positionMultiplier } from "../engine/ranges.ts";
+import {
+  allFoldChance,
+  chooseByEv,
+  priceActions,
+  realisation,
+} from "./evaluate.ts";
 
 /* ==================================================================
    Bot decision policy.
@@ -129,8 +135,28 @@ let RANGE_MEMO_HAND = -1;
 function opponentRange(s: GameState, q: GameState["players"][number]): HandLabel[] {
   const stored = s.botRanges[q.id];
   if (stored && stored.length) return stored;
-  const raisedPre = q.pfrThisHand === true;
-  const action = raisedPre ? (s.aggressorPreflop === q.id ? "open" : "threebet") : "call";
+  // Which pre-flop role to model this player in. `aggressorPreflop` is
+  // overwritten on EVERY pre-flop raise (engine.ts:477, :500), so it names the
+  // LAST raiser — which made this test inside out: the player who just 3-bet
+  // matched it and was modelled with an OPENING range, while the player who
+  // merely opened was modelled with a re-raising one. The two roles were
+  // modelled as each other, and because the human never has a stored range
+  // (only bot moves record one) that was the live path every time the player
+  // 3-bet — which is exactly the spot the 3-bet range cap was widened for.
+  //
+  // The rule the mobile lead uses needs no history: whoever currently holds
+  // the betting lead is re-raising if the bet is past a single open, and
+  // anybody else who raised pre-flop opened. This label is only consulted
+  // pre-flop — post-flop falls through to the board-based narrowing below —
+  // so the correction is confined to pre-flop range inference.
+  const action: "open" | "call" | "threebet" =
+    q.id === s.aggressor
+      ? s.currentBet > 4.5 * s.bigBlind
+        ? "threebet"
+        : "open"
+      : q.pfrThisHand === true
+        ? "open"
+        : "call";
   if (s.board.length === 0) return inferredPreflopRange(q, q.position, action);
 
   if (RANGE_MEMO_HAND !== s.handNumber) {
@@ -432,20 +458,162 @@ function decideBotInner(s: GameState, seat: number): BotDecision {
       }
       if (la.canCall) return { action: { type: "call", amount: la.callAmount }, range: PREMIUM_LIST };
     }
-    // Speculative continues vs a 3-bet: at a sane price, by the hand's own
-    // 3-bet-chart frequency, widened by how often this particular player
-    // re-raises. Somebody 3-betting half their hands is not representing
-    // anything, and folding everything but QQ+ to them is free money.
-    if (f3vs > 0 && la.canCall && la.callAmount <= 12 * bb &&
-        rnd < f3vs * (0.4 + cfg.stickiness) * adj.defend) {
-      return { action: { type: "call", amount: la.callAmount }, range: chartLabels(charts?.threebet ?? {}, 0.25) };
-    }
-    // Once the read is strong, hands that merely *call* an open are worth a
-    // call here too — that is what punishing a serial re-raiser looks like.
-    if (adj.defend > 1.25 && la.canCall && la.callAmount <= 10 * bb) {
-      const fcVs = charts?.call[label] ?? 0;
-      if (fcVs > 0 && rnd < fcVs * (adj.defend - 1)) {
-        return { action: { type: "call", amount: la.callAmount }, range: chartLabels(charts?.call ?? {}, 0.25) };
+    // Price it.
+    //
+    // Everything above this line is the book. Below it there is no chart to
+    // consult: `charts` is keyed `myPosition_vs_raiserPosition`, and every
+    // one of those is "defender versus an EARLIER seat", so a re-raise from
+    // a LATER seat — which is what a 3-bet is — misses the lookup every
+    // time. The brain also skips the charts outright once the bet passes
+    // 4.5bb. The old code multiplied the missing frequency by the adaptation
+    // terms, got zero, folded everything but AA/KK/QQ/AK, and did that 94.5%
+    // of the time across 769 logged hands without ever adjusting. The read
+    // was correct the whole time; it had nowhere to go. The same absence of
+    // arithmetic is why a bot folded for 12 chips into a pot of 534.
+    //
+    // So out of book now falls through to arithmetic instead of to folding.
+    const raiser = s.aggressor != null ? s.players[s.aggressor] : null;
+    if (raiser && la.canCall) {
+      const live = s.players.filter((q) => !q.hasFolded && q.id !== seat);
+      // Against EVERYONE still in, not just the raiser: equity against one
+      // opponent's range is the wrong number in a multiway pot, and using it
+      // had bots calling 125bb with 83o into three live players.
+      const myInts = comboToInts(p.hole);
+      const blocked = new Set<number>(myInts);
+      const toCombos = (labels: HandLabel[]): [number, number][] => {
+        const combos: [number, number][] = [];
+        for (const l of labels) {
+          for (const [a, b] of labelToCombos(l)) {
+            const ai = cardToInt(a);
+            const bi = cardToInt(b);
+            if (!blocked.has(ai) && !blocked.has(bi)) combos.push([ai, bi]);
+          }
+        }
+        return combos;
+      };
+      const oppCombos = live
+        .map((q) => toCombos(opponentRange(s, q)))
+        .filter((c) => c.length > 0);
+      // SEEDED, not left to `Math.random`. This is the only pre-flop
+      // decision that runs a Monte Carlo, and the reference fixtures pin
+      // pre-flop decisions by holding `Math.random` at a constant — which
+      // makes an unseeded sampler degenerate: it draws the same index every
+      // iteration and returns a number that moves with the pinned constant
+      // instead of with the hand. That showed up as a bigger 3-bet getting
+      // CALLED more often than a smaller one. A seed derived from the spot
+      // keeps the estimate deterministic, reproducible in a replay, and
+      // independent of however the caller's generator is behaving.
+      const eqSeed = hashSeed(
+        `3bet|${s.handNumber}|${seat}|${p.hole.join("")}|${s.currentBet}|${live.length}`,
+      );
+      const eq =
+        oppCombos.length === live.length && oppCombos.length === 1
+          // 600, matching the mobile. The `eq > 0.58` gate below sits inside
+          // this sampler's own noise: at 450 iterations the standard error is
+          // ~2.4%, so a hand whose true equity is 0.574 clears the gate on a
+          // lucky draw rather than on its merits.
+          ? equityVsRange(myInts, [], oppCombos[0], 600, eqSeed).equity
+          : oppCombos.length === live.length && oppCombos.length > 1
+            ? equityVsRanges(myInts, [], oppCombos, 450, eqSeed).equity
+            : equityVsRandom(myInts, [], 300, eqSeed).equity;
+
+      const potAfter = s.pot + la.callAmount;
+      const behind = Math.max(0, p.stack - la.callAmount);
+      const realise = realisation(
+        live.length,
+        p.position === "BTN",
+        potAfter > 0 ? behind / potAfter : 2,
+      );
+      // 2.2x, and never more than the pot. A 4-bet sized off the current bet
+      // alone becomes an effective jam once the bet is already large, and a
+      // table that 4-bet-jams is a table that stacks off: all-in actions ran
+      // at twice the rate with 2.4x and no pot cap.
+      const fourBetTo = clampInt(
+        Math.min(s.currentBet * 2.2, s.currentBet + s.pot),
+        la.minRaiseTo,
+        la.maxRaiseTo,
+      );
+      // Re-raising a weak hand IS a bluff, so it answers to the same
+      // governor the post-flop bluffs do rather than to fold equity alone.
+      // Pricing the raise on fold equity by itself opened a brand new bluff
+      // channel with nothing watching it: pre-flop all-ins doubled.
+      const bluffingPre = bluffsThisHand(
+        s.handNumber,
+        seat,
+        BLUFF_HANDS[cfg.archetype] *
+          bluffPolicy(p).frequency *
+          bluffViability(live, difficulty),
+      );
+      // How deep the raise war already is. An open is ~2.5bb and a 3-bet
+      // ~7bb, so past 12bb this is a 4-bet or worse. Re-raising on fold
+      // equity down there is how a table gets all-in before the flop: every
+      // priced re-raise is 2.2x the last, and this same branch answers each
+      // one, so three of them compound into a jam. Deep in the war a raise
+      // needs the hand, not the read.
+      const deep = s.currentBet > 12 * bb;
+      const mayRaise =
+        la.canRaise &&
+        fourBetTo > s.currentBet &&
+        (deep ? eq > 0.72 : eq > 0.58 || bluffingPre);
+      // The pot this bot can actually WIN, not the pot on the table. When it
+      // cannot cover the re-raise, `legalActions` caps `callAmount` at its
+      // stack and the engine returns the raiser's excess uncalled — so those
+      // chips were never winnable. Handing the full `s.pot` to the evaluator
+      // priced a call above zero in spots that were clearly negative, and
+      // short stacks called off their last chips with 72o.
+      const uncallable = Math.max(0, la.toCall - la.callAmount);
+      const winnable = Math.max(0, s.pot - uncallable);
+      const priced = priceActions({
+        equity: eq,
+        pot: winnable,
+        callCost: la.callAmount,
+        canCall: la.canCall,
+        canRaise: mayRaise,
+        raiseTo: fourBetTo,
+        raiseCost: fourBetTo - p.committed,
+        // How often a 4-bet of this size gets through, from what these
+        // particular players have been folding to.
+        foldsEverybody: allFoldChance(
+          live,
+          "preflop",
+          fourBetTo - s.currentBet,
+          s.pot,
+        ),
+        realise,
+        toCall: la.toCall,
+      });
+      // How much -EV this player will wear to stay in the hand. Without it
+      // nothing archetype-dependent reached the priced branch at all and all
+      // four archetypes answered a 3-bet identically, which is neither human
+      // nor hard to learn.
+      const slack = bb * Math.max(0, cfg.stickiness * 1.2 - 0.2);
+      const ranked = priced
+        .map((a) => (a.kind === "fold" ? a : { ...a, ev: a.ev + slack }))
+        .sort((a, b) => b.ev - a.ev);
+      // The band has to be tied to the SIZE OF THE DECISION, not the pot: a
+      // share of the pot alone grew to hundreds of chips facing an all-in,
+      // and a call worth -900 counted as "close enough to mix".
+      const band =
+        Math.min(s.pot * 0.05, Math.max(bb, la.callAmount * 0.2)) *
+        (0.6 + cfg.stickiness);
+      const pick = chooseByEv(ranked, rnd, band);
+      // The range a bot SAYS it has must never come back empty: an empty
+      // stored range sends `opponentRange` to the archetype's whole playing
+      // range, 46% wide for a Station, and leaves the Peek panel blank.
+      const shown = chartLabels(charts?.threebet ?? {}, 0.25);
+      if (pick.kind === "raise" && pick.to != null) {
+        if (eq < 0.5) p.bluffedThisHand = true;
+        return {
+          action: betOrRaise(s, pick.to),
+          range: shown.length ? shown : PREMIUM_LIST,
+        };
+      }
+      if (pick.kind === "call") {
+        const own = rangesFor(cfg.archetype, p.position);
+        return {
+          action: { type: "call", amount: la.callAmount },
+          range: shown.length ? shown : [...own.play],
+        };
       }
     }
     return { action: { type: "fold" }, range: [] };

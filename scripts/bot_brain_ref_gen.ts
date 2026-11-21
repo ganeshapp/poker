@@ -10,6 +10,15 @@
  * Mirrors the scenario setup in poker-zapp/test/engine/bot_brain_test.dart
  * (_cfg, _deck, _holes, _setup) so the pinned expectations come from the
  * desktop engine instead of being maintained by hand.
+ *
+ * SCOPE: this covers the P1–P5 open / vs-open entries and the river ones. The
+ * facing-a-3-bet entries (P7*, P8*) are NOT generated here — the mobile bot
+ * policy is the lead for that branch and re-pins them from its own engine with
+ * `dart run tool/regen_3bet_ref.dart`. Both engines now price that spot rather
+ * than looking it up, and they agree closely, but the mobile has an opponent
+ * model with learned per-opponent fold rates and the desktop does not, so they
+ * are not expected to match combo for combo. Do not "fix" a difference there by
+ * pasting this script's output over the mobile's.
  */
 import { createTable, startHand, applyAction, legalActions } from "../src/game/engine.ts";
 import { decideBot } from "../src/game/botBrain.ts";

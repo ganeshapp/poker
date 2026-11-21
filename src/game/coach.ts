@@ -56,9 +56,9 @@ export function villainRangeFor(state: GameState, p: Player): HandLabel[] {
   return [];
 }
 
-export function firstOpponentInHand(state: GameState): number {
-  for (const p of state.players) if (!p.isHero && !p.hasFolded) return p.id;
-  return 1;
+export function firstOpponentInHand(state: GameState, seat = 0): number {
+  for (const p of state.players) if (p.id !== seat && !p.hasFolded) return p.id;
+  return seat === 1 ? 0 : 1;
 }
 
 export function scoreGuess(painted: HandLabel[], actual: HandLabel[]) {
@@ -128,14 +128,22 @@ export async function evaluateHero(
   id: number,
   settings: CoachSettings,
   math: EquityEngine,
+  // Which seat is being graded. The coach grades the human at seat 0 in the
+  // app; `scripts/grade_bots.ts` points the same function at a bot, which is
+  // the only way to measure what a bot leaves behind in a spot nobody wrote
+  // a probe for.
+  seat = 0,
 ): Promise<CoachReview | null> {
-  const hero = state.players[0];
-  if (!hero.hole) return null;
+  const hero = state.players[seat];
+  if (!hero?.hole) return null;
   const la = legalActions(state);
   // Checks are evaluated too (below) — half the game used to be
   // invisible to the coach.
 
-  const villId = state.aggressor != null && state.aggressor !== 0 ? state.aggressor : firstOpponentInHand(state);
+  const villId =
+    state.aggressor != null && state.aggressor !== seat
+      ? state.aggressor
+      : firstOpponentInHand(state, seat);
   const vill = state.players[villId];
   const arche = vill.archetype;
   const cfg = arche ? ARCHETYPES[arche] : null;
@@ -144,7 +152,7 @@ export async function evaluateHero(
   const bb = state.bigBlind;
   const heroLabel = cardsToLabel(hero.hole[0], hero.hole[1]);
   const boardStr = state.board.length ? state.board.join(" ") : "a pre-flop board";
-  const opponents = state.players.filter((p) => !p.isHero && !p.hasFolded).length;
+  const opponents = state.players.filter((p) => p.id !== seat && !p.hasFolded).length;
   const fieldMode = opponents > 1;
   const oppDesc = fieldMode ? `the ${opponents}-player field` : `${vill.name}'s range`;
 
@@ -167,7 +175,7 @@ export async function evaluateHero(
   // shown. Grading multiway against RANDOM hands was flattering weak holdings
   // badly — queen-high on a board of connected low cards scored as a "thin
   // spot" when it is drawing nearly dead against hands that keep betting.
-  const liveOpponents = state.players.filter((p) => !p.isHero && !p.hasFolded && !p.sittingOut);
+  const liveOpponents = state.players.filter((p) => p.id !== seat && !p.hasFolded && !p.sittingOut);
   const oppRanges = liveOpponents
     .map((p) => villainRangeFor(state, p))
     .filter((r) => r.length > 0)

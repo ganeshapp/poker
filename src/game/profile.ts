@@ -129,6 +129,7 @@ export function inferredPreflopRange(
   pos: Position,
   action: "open" | "call" | "threebet" | "defend",
 ): HandLabel[] {
+  const w = p.recent;
   const read = readPlayer(p);
   // Until there is a sample, fall back to a sane default rather than
   // pretending to know: a typical opening range, not "any two cards".
@@ -138,9 +139,27 @@ export function inferredPreflopRange(
 
   switch (action) {
     case "threebet": {
-      // Re-raising range: scaled by how often they actually do it, floored
-      // so a maniac's 3-bet is still wide and a rock's is still premium.
-      const pct = Math.max(2.5, Math.min(30, read.threeBet * 100 * 1.6));
+      // Re-raising range: what they actually re-raise, not a polite guess.
+      //
+      // This used to cap at 30%, which quietly broke the read it was meant
+      // to serve: somebody re-raising 84% of the time was modelled as
+      // holding the top 30% of hands, so everybody folded to them correctly
+      // — given a belief wrong by a factor of three. The ceiling is now high
+      // enough that a maniac is modelled as a maniac.
+      //
+      // The smoothing is not optional here. `readPlayer`'s own `threeBet` is
+      // a raw ratio, so one re-raise in one opportunity reads as 100%; with
+      // an 80% ceiling that would model a stranger as holding any two cards
+      // off a single observation. Ten prior opportunities at 7% hold it down
+      // until there is really evidence.
+      const rate = (w.threeBet + 10 * 0.07) / (w.threeBetOpp + 10);
+      // The multiplier stays at 1.6, as it was. Lowering it while raising the
+      // ceiling would have narrowed every ordinary opponent's modelled
+      // re-raising range by 12.5% — the opposite of the point — and the
+      // ceiling is what this change is actually for: measured across
+      // bot-versus-bot play the smoothed rate peaks around 0.18, so the cap
+      // only ever binds against a human who really does re-raise relentlessly.
+      const pct = Math.max(2.5, Math.min(80, rate * 100 * 1.6));
       return [...topPercentRange(pct)];
     }
     case "open":

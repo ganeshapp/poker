@@ -33,6 +33,8 @@ jobs:
           node --experimental-transform-types scripts/pushfold_test.ts
           node --experimental-transform-types scripts/preflop_test.ts
           node --experimental-transform-types scripts/bot_test.ts
+          node --experimental-transform-types scripts/evaluate_test.ts
+          node --experimental-transform-types scripts/profile_test.ts
           node --experimental-transform-types scripts/srs_test.ts
           node --experimental-transform-types scripts/icm_test.ts
           node --experimental-transform-types scripts/hhimport_test.ts

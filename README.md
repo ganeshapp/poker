@@ -24,6 +24,15 @@ Built by [Gapp](https://www.gapp.in).
   opponent, and the table forgets everything when the session ends. Every bot also ignores its own
   read a small share of the time and just plays straight — enough to keep testing whether the read
   still holds, and to stop its behaviour from being a readable function of yours.
+- **Bots that price a spot instead of looking it up.** Pre-flop charts cover the spots they cover;
+  outside them the bots do the arithmetic. Facing a re-raise they put a chip value on folding,
+  calling and 4-betting — equity against everyone still in the hand, against the price, discounted
+  by how much of that equity a seat in that position actually collects — and mix between options
+  that come out close. This is what stops the failure mode a chart cannot see: there is no
+  `UTG_vs_BTN` re-raise chart, and the old fallback was to fold, so a player who re-raised
+  relentlessly took 93% of those pots uncontested. `scripts/grade_bots.ts` measures what the bots
+  leave behind per decision — the poker equivalent of centipawn loss — by pointing the EV Coach at
+  a bot instead of at you.
 - **Inline EV Coach.** On each decision the engine runs a Monte-Carlo equity sim vs. the villain's
   perceived range — or, multiway, vs. the whole field. Clear −EV calls pause the hand; every note
   shows the step-by-step math, lets you view the assumed range, and stays reopenable.
@@ -123,8 +132,9 @@ node --experimental-transform-types scripts/icm_test.ts        # Malmuth-Harvill
 node --experimental-transform-types scripts/hhimport_test.ts   # PokerStars import round-trip + analyzer
 node --experimental-transform-types scripts/table_config_test.ts # heads-up / 9-max / ante invariants
 node --experimental-transform-types scripts/preflop_test.ts    # 100bb preflop chart sanity + drill coherence
-node --experimental-transform-types scripts/bot_test.ts        # bot preflop properties + open-jam exploit sim
+node --experimental-transform-types scripts/bot_test.ts        # bot preflop properties + open-jam exploit sim + fold-to-3-bet
 node --experimental-transform-types scripts/profile_test.ts    # opponent model: reads, inferred ranges, per-archetype adaptation
+node --experimental-transform-types scripts/evaluate_test.ts   # the evaluation function: what each action is worth in chips
 
 # Rust engine:
 cargo test --manifest-path poker-core/Cargo.toml
