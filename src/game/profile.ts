@@ -130,11 +130,15 @@ export function inferredPreflopRange(
   action: "open" | "call" | "threebet" | "defend",
 ): HandLabel[] {
   const w = p.recent;
-  const read = readPlayer(p);
-  // Until there is a sample, fall back to a sane default rather than
-  // pretending to know: a typical opening range, not "any two cards".
-  const vpip = read.confidence > 0.2 ? read.vpip : 0.26;
-  const pfr = read.confidence > 0.2 ? read.pfr : 0.19;
+  // Eight prior hands prevent a couple of opens from becoming a certainty,
+  // and each rate uses its own opportunity count rather than lifetime hands.
+  // This replaced a hard switch on `read.confidence > 0.2`, which had a cliff
+  // in it: one hand either side of the threshold moved the inferred range
+  // between "a typical opener" and whatever two hands of evidence happened to
+  // say. The mobile lead has always smoothed; the `threebet` case below was
+  // already in exact parity, so this function matching matters.
+  const vpip = (w.vpip + 8 * 0.26) / (w.hands + 8);
+  const pfr = (w.pfr + 8 * 0.19) / (w.hands + 8);
   const ranges = buildPreflopRanges(vpip * 100, pfr * 100, pos);
 
   switch (action) {
